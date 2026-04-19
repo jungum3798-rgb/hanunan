@@ -15,7 +15,7 @@ export default function MemberLogin() {
   const googleScope = "openid email profile";
 
   const kakaoUrl = "https://kauth.kakao.com/oauth/authorize";
-  const kakaoClientId = "f7a09751e14f49f1e4bf0108a7c7029a";
+  const kakaoClientId = "007f796368af3edc01ad000ad8484adc";
   const kakaoRedirectUrl = "http://localhost:3000/oauth/kakao/redirect";
 
   const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8081";

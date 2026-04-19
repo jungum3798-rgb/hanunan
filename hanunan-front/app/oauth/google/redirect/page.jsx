@@ -27,7 +27,10 @@ export default function GoogleRedirect() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ code }),
+        body: JSON.stringify({ 
+          code, 
+          redirect_uri: "http://localhost:3000/oauth/google/redirect" 
+        }),
       });
 
       if (!response.ok) {

@@ -28,7 +28,10 @@ export default function KakaoRedirect() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ code }),
+        body: JSON.stringify({
+          code,
+          redirect_uri: "http://localhost:3000/oauth/kakao/redirect"
+        }),
       });
 
       if (!response.ok) {
@@ -37,7 +40,7 @@ export default function KakaoRedirect() {
 
       const data = await response.json();
       const token = data.token;
-      
+
       localStorage.setItem("token", token);
       window.location.href = "/";
     } catch (error) {
