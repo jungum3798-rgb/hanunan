@@ -114,5 +114,45 @@ public class GeocodingService {
         }
         return root.path("documents");
     }
+
+    // ─────────────────────────────────────────
+    // 역지오코딩: 좌표 → [시/도, 시/군/구, 읍/면/동]
+    // ─────────────────────────────────────────
+    public String[] reverseGeocode(double lat, double lng) {
+        try {
+            URI uri = URI.create(String.format(
+                    "https://dapi.kakao.com/v2/local/geo/coord2regioncode.json?x=%s&y=%s",
+                    lng, lat
+            ));
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("Authorization", "KakaoAK " + kakaoApiKey);
+            HttpEntity<Void> entity = new HttpEntity<>(headers);
+
+            ResponseEntity<String> response = restTemplate.exchange(uri, HttpMethod.GET, entity, String.class);
+            JsonNode documents = objectMapper.readTree(response.getBody()).path("documents");
+
+            if (documents.isArray() && !documents.isEmpty()) {
+                // region_type "H"(행정동) 우선, 없으면 첫 번째
+                JsonNode region = null;
+                for (JsonNode doc : documents) {
+                    if ("H".equals(doc.path("region_type").asText())) {
+                        region = doc;
+                        break;
+                    }
+                }
+                if (region == null) region = documents.get(0);
+
+                String r1 = region.path("region_1depth_name").asText(); // 예: 경기도
+                String r2 = region.path("region_2depth_name").asText(); // 예: 양주시
+                String r3 = region.path("region_3depth_name").asText(); // 예: 덕계동
+                log.info("[REVERSE-GEOCODE] 결과: {} {} {}", r1, r2, r3);
+                return new String[]{r1, r2, r3};
+            }
+        } catch (Exception e) {
+            log.error("[REVERSE-GEOCODE] 실패: {}", e.getMessage());
+        }
+        return new String[]{};
+    }
 }
 

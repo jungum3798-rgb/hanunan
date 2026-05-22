@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hanun.hanunan.domain.fire.dto.*;
 import com.hanun.hanunan.domain.fire.entity.FireDisaster;
 import com.hanun.hanunan.domain.fire.repository.FireDisasterRepository;
+import com.hanun.hanunan.global.client.DisasterApiClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -20,12 +21,6 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class FireDisasterService {
 
-    @Value("${disaster.api.key}")
-    private String disasterApiKey;
-
-    @Value("${disaster.api.url}")
-    private String disasterApiUrl;
-
     @Value("${groq.api.key}")
     private String groqApiKey;
 
@@ -36,14 +31,21 @@ public class FireDisasterService {
     private final GeocodingService geocodingService;
     private final ObjectMapper objectMapper;
     private final RestTemplate restTemplate;
+    private final DisasterApiClient disasterApiClient;
 
     // ─────────────────────────────────────────
-    // 스케줄러에서 호출 - 재난문자 조회 및 처리
+    // 컨트롤러 /trigger 용 - 내부에서 직접 fetch 후 처리
     // ─────────────────────────────────────────
     public void fetchAndProcessFireMessages() {
         log.info("재난문자 API 호출 시작");
+        processItems(disasterApiClient.fetchAll());
+    }
+
+    // ─────────────────────────────────────────
+    // 스케줄러에서 호출 - 미리 fetch된 아이템 중 화재·산불만 처리
+    // ─────────────────────────────────────────
+    public void processItems(List<DisasterApiItem> items) {
         try {
-            List<DisasterApiItem> items = fetchDisasterMessages();
             if (items == null || items.isEmpty()) {
                 log.info("수신된 재난문자 없음");
                 return;
@@ -63,48 +65,6 @@ public class FireDisasterService {
         } catch (Exception e) {
             log.error("재난문자 처리 오류: {}", e.getMessage());
         }
-    }
-
-    // ─────────────────────────────────────────
-    // 재난문자 공공 API 호출
-    // ─────────────────────────────────────────
-    private List<DisasterApiItem> fetchDisasterMessages() {
-        String url = disasterApiUrl
-                + "?serviceKey=" + disasterApiKey
-                + "&returnType=json&numOfRows=20&pageNo=1";
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-        headers.set("Accept", "application/json, text/plain, */*");
-        HttpEntity<Void> entity = new HttpEntity<>(headers);
-
-        int maxAttempts = 5;
-        long[] delays = {0, 3000, 5000, 10000, 20000}; // 0, 3초, 5초, 10초, 20초
-        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
-            if (delays[attempt - 1] > 0) {
-                try { Thread.sleep(delays[attempt - 1]); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); return List.of(); }
-            }
-            try {
-                ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
-                log.info("재난문자 API 응답 상태: {}", response.getStatusCode());
-
-                if (response.getBody() == null) return List.of();
-
-                if (response.getBody().trim().startsWith("<")) {
-                    log.error("재난문자 API가 HTML을 반환했습니다. API 키를 확인하세요.");
-                    return List.of();
-                }
-
-                DisasterApiResponse parsed = objectMapper.readValue(response.getBody(), DisasterApiResponse.class);
-                if (parsed.getBody() != null) return parsed.getBody();
-                return List.of();
-
-            } catch (Exception e) {
-                log.warn("재난문자 API 호출 실패 ({}/{}): {}", attempt, maxAttempts, e.getMessage());
-            }
-        }
-        log.error("재난문자 API 호출 {}회 모두 실패", maxAttempts);
-        return List.of();
     }
 
     // ─────────────────────────────────────────
