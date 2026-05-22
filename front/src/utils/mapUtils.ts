@@ -11,8 +11,14 @@ export const getDistance = (lat1: number, lng1: number, lat2: number, lng2: numb
 export const sortItemsByDistance = (items: any[], userLocation: { lat: number, lng: number } | null) => {
     if (!userLocation) return items;
     return [...items].sort((a, b) => {
-        const distA = getDistance(userLocation.lat, userLocation.lng, a.latitude, a.longitude);
-        const distB = getDistance(userLocation.lat, userLocation.lng, b.latitude, b.longitude);
+        const latA = a.latitude ?? a.centerLatitude ?? a.pinLatitude ?? a.lat;
+        const lngA = a.longitude ?? a.centerLongitude ?? a.pinLongitude ?? a.lng;
+        
+        const latB = b.latitude ?? b.centerLatitude ?? b.pinLatitude ?? b.lat;
+        const lngB = b.longitude ?? b.centerLongitude ?? b.pinLongitude ?? b.lng;
+        
+        const distA = getDistance(userLocation.lat, userLocation.lng, latA, lngA);
+        const distB = getDistance(userLocation.lat, userLocation.lng, latB, lngB);
         return distA - distB;
     });
 };

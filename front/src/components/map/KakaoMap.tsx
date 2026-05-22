@@ -1,10 +1,14 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
 import Script from 'next/script';
-import { DisasterMessage, WeatherAlert, FireStation, SafetyFacility, FireMarker } from '@/services/api'; //0512
+import { DisasterMessage, WeatherAlert, FireStation, SafetyFacility, FireMarker, Report } from '@/services/api';
 
 const KAKAO_SDK_URL = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${process.env.NEXT_PUBLIC_KAKAO_MAP_KEY}&autoload=false&libraries=services,clusterer`;
+
+export interface KakaoMapHandle {
+  moveToLocation: (lat: number, lng: number) => void;
+}
 
 interface KakaoMapProps {
   center: { lat: number; lng: number };
@@ -12,27 +16,49 @@ interface KakaoMapProps {
   disasterData: DisasterMessage[];
   weatherAlerts: WeatherAlert[];
   fireStations: FireStation[];
-  safetyData: SafetyFacility[];
-  mapReports: any[];
-  fireMarkers: FireMarker[]; //0512
+  safetyFacilities: SafetyFacility[];
+  reportMarkers: Report[];
+  fireMarkers: FireMarker[];
   onSelectItem: (item: any, type: 'DISASTER' | 'WEATHER' | 'FIRE' | 'SAFETY' | 'REPORT') => void;
+  fetchLatestReports: () => void;
+  fetchSafetyData: (bounds: { swLat: number; swLng: number; neLat: number; neLng: number }) => void;
 }
 
-export default function KakaoMap({ center, activeCategory, disasterData, weatherAlerts, fireStations, safetyData, mapReports, onSelectItem, fireMarkers }: KakaoMapProps) { //0512
+const REPORT_TYPE: Record<string, { icon: string; label: string }> = {
+  화재: { icon: '🔥', label: '화재' },
+  기상: { icon: '🌧️', label: '기상' }
+};
+
+const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>((props, ref) => {
+  const { center, activeCategory, disasterData, weatherAlerts, fireStations, safetyFacilities, reportMarkers, onSelectItem, fireMarkers, fetchLatestReports, fetchSafetyData } = props;
+  
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<any>(null);
   const overlaysRef = useRef<any[]>([]);
   const polygonsRef = useRef<any[]>([]);
   const myLocationOverlayRef = useRef<any>(null);
   
+  // 부모 컴포넌트에서 호출할 수 있도록 함수 노출
+  useImperativeHandle(ref, () => ({
+    moveToLocation: (lat: number, lng: number) => {
+      if (mapInstance.current) {
+        const { kakao } = window as any;
+        const moveLatLon = new kakao.maps.LatLng(lat, lng);
+        mapInstance.current.panTo(moveLatLon); // 부드럽게 이동
+      }
+    }
+  }));
+
   // 시설별 클러스터러 관리
   const disasterClusterer = useRef<any>(null);
   const shelterClusterer = useRef<any>(null);   
   const aedClusterer = useRef<any>(null);       
-  const hydrantClusterer = useRef<any>(null);   
+  const fireWaterClusterer = useRef<any>(null);   
+  const rescueBoxClusterer = useRef<any>(null);
   const reportClusterer = useRef<any>(null);
 
-  //0512 시간 기반 화재 단계 판별 함수
+
+  // 시간 기반 화재 단계 판별 함수
   const getFireStage = (createdAt: string) => {
     const now = new Date();
     const created = new Date(createdAt);
@@ -41,7 +67,23 @@ export default function KakaoMap({ center, activeCategory, disasterData, weather
     if (diffHours <= 2) return 'active';     // 0~2시간: 진행 중 (빨강 + 깜빡임)
     if (diffHours <= 6) return 'cooling';    // 2~6시간: 정리 중 (주황)
     if (diffHours <= 12) return 'ended';     // 6~12시간: 종료 추정 (회색)
-    return 'deleted';                         // 12시간 이상: 삭제
+    return 'deleted';                        // 12시간 이상: 삭제
+  };
+
+  // 안전시설 데이터 로드
+  const triggerFetchSafetyData = () => {
+    if (!mapInstance.current) return;
+    const bounds = mapInstance.current.getBounds();
+    const swLatLng = bounds.getSouthWest();
+    const neLatLng = bounds.getNorthEast();
+
+    // 내부에서 결국 부모의 fetchSafetyData를 실행
+    fetchSafetyData({
+      swLat: swLatLng.getLat(),
+      swLng: swLatLng.getLng(),
+      neLat: neLatLng.getLat(),
+      neLng: neLatLng.getLng()
+    });
   };
 
   const handleMoveToCurrentLocation = () => {
@@ -59,8 +101,9 @@ export default function KakaoMap({ center, activeCategory, disasterData, weather
             yAnchor: 0.5,
           });
           myLocationOverlayRef.current.setMap(mapInstance.current);
+          setTimeout(triggerFetchSafetyData, 300);  // 현위치로 이동했을 때도 주변 안전시설 데이터를 새로 고치도록 트리거
         },
-        () => console.warn("위치 정보를 가져올 수 없습니다.")
+        () => alert("위치 정보를 가져올 수 없습니다.")
       );
     }
   };
@@ -86,12 +129,35 @@ export default function KakaoMap({ center, activeCategory, disasterData, weather
       });
 
       disasterClusterer.current = createClusterer('rgba(255, 75, 75, 0.9)');
-      shelterClusterer.current = createClusterer('rgba(76, 92, 164, 0.9)'); 
       aedClusterer.current = createClusterer('rgba(255, 152, 0, 0.9)');   
-      hydrantClusterer.current = createClusterer('rgba(244, 67, 54, 0.9)'); 
+      shelterClusterer.current = createClusterer('rgba(10, 177, 54, 0.9)'); 
+      fireWaterClusterer.current = createClusterer('rgba(31, 121, 255, 0.9)'); 
+      rescueBoxClusterer.current = createClusterer('rgba(207, 46, 29, 0.9)');
       reportClusterer.current = createClusterer('rgba(255, 138, 0, 0.9)');
 
-      kakao.maps.event.addListener(mapInstance.current, 'click', () => onSelectItem(null, 'DISASTER'));
+      handleMoveToCurrentLocation();
+      kakao.maps.event.addListener(mapInstance.current, 'click', () => onSelectItem(null, activeCategory));
+      
+      //사용자가 드래그/확대하여 지도가 완전히 멈췄을 때 실시간 바운즈 안전시설 데이터 요청 연동
+      // kakao.maps.event.addListener(mapInstance.current, 'idle', () => {
+      //   if (!mapInstance.current) return;
+      //   const bounds = mapInstance.current.getBounds();
+      //   const swLatLng = bounds.getSouthWest();
+      //   const neLatLng = bounds.getNorthEast();
+
+      //   // 부모 컴포넌트(DashboardPage)가 공급해 준 API 호출 함수 실행 
+      //   fetchSafetyData({
+      //     swLat: swLatLng.getLat(),
+      //     swLng: swLatLng.getLng(),
+      //     neLat: neLatLng.getLat(),
+      //     neLng: neLatLng.getLng()
+      //   });
+      // });
+      // 사용자가 드래그/확대하여 지도가 완전히 멈췄을 때 작동
+      kakao.maps.event.addListener(mapInstance.current, 'idle', triggerFetchSafetyData);
+      
+      // 지도 생성 완료 직후, 최초 1회 강제로 주변 안전시설 데이터를 불러오기
+      triggerFetchSafetyData();
       renderItems();
     });
   };
@@ -106,34 +172,34 @@ export default function KakaoMap({ center, activeCategory, disasterData, weather
     polygonsRef.current = [];
 
     // 2. 모든 클러스터러 비우기
-    [disasterClusterer, shelterClusterer, aedClusterer, hydrantClusterer, reportClusterer]
+    [disasterClusterer, shelterClusterer, aedClusterer, fireWaterClusterer, rescueBoxClusterer, reportClusterer]
       .forEach(ref => ref.current?.clear());
 
-    // 3. 마커 바구니 생성
+    // 3. 클러스터러 바구니용 순수 Marker 배열 생성
     const disasterMarkers: any[] = [];
-    const shelterMarkers: any[] = [];
-    const aedMarkers: any[] = [];
-    const hydrantMarkers: any[] = [];
-    const reportMarkers: any[] = [];
+    const shelterMarkers: any[] = []; //SHELTER
+    const aedMarkers: any[] = []; //AED
+    const fireWaterMarkers: any[] = []; //FIRE_WATER
+    const rescueBoxMarkers: any[] = []; //RESCUE_BOX
+    const addreportMarkers: any[] = [];
 
     if (activeCategory === 'DISASTER') {
-      //일반 재난문자 데이터
+      // 일반 재난문자 데이터
       disasterData.forEach(data => {
         const pos = new kakao.maps.LatLng(data.latitude, data.longitude);
         const content = document.createElement('div');
         content.innerHTML = `<div style="cursor:pointer; width:30px; height:30px; background:white; border-radius:50%; border:3px solid #FF4B4B; display:flex; align-items:center; justify-content:center; font-size:14px; box-shadow:0 2px 8px rgba(0,0,0,0.3);">⚠️</div>`;
-        content.onclick = (e) => { e.stopPropagation(); onSelectItem(data, 'DISASTER'); mapInstance.current.panTo(pos); };
+        content.onclick = (e) => { e.stopPropagation(); onSelectItem(data, 'DISASTER'); };
+        
         const overlay = new kakao.maps.CustomOverlay({ position: pos, content, yAnchor: 0.5, zIndex: 10 });
         disasterMarkers.push(overlay);
         overlaysRef.current.push(overlay);
       });
 
-      //0512 백엔드 화재 파이프라인 데이터 (FireMarker) 연동
       fireMarkers.forEach(fire => {
         const stage = getFireStage(fire.createdAt);
-        if (stage === 'deleted') return; // 12시간 이상 경과 시 렌더링 제외
-
         const pos = new kakao.maps.LatLng(fire.latitude, fire.longitude);
+
         const color = stage === 'active' ? '#FF4B4B' : stage === 'cooling' ? '#FF9800' : '#757575';
         const isPulse = stage === 'active' ? 'fire-pulse' : '';
 
@@ -144,22 +210,18 @@ export default function KakaoMap({ center, activeCategory, disasterData, weather
             🔥
           </div>
         `;
-         
-        //0512 클릭 시 InfoPanel이 인식할 수 있도록 필드를 보정해서 넘김
+          
         content.onclick = (e) => { 
           e.stopPropagation(); 
-          
-          // InfoPanel의 규격에 맞게 데이터를 보정하여 전달
           const processedFire = {
             ...fire,
-            isFirePipeline: true, // 이 플래그가 있어야 InfoPanel에서 화재 UI가 뜸
+            isFirePipeline: true,
             uniqueKey: `rt-fire-${fire.id}`,
-            msgCn: fire.messageContent, // 백엔드 필드명을 UI 필드명으로 매핑
+            msgCn: fire.messageContent,
             locationName: fire.parsedAddress || fire.rcptnRgnNm,
+            fireStage: stage
           };
-
           onSelectItem(processedFire, 'DISASTER'); 
-          mapInstance.current.panTo(pos); 
         };
 
         const overlay = new kakao.maps.CustomOverlay({ position: pos, content, yAnchor: 0.5, zIndex: 20 });
@@ -200,53 +262,114 @@ export default function KakaoMap({ center, activeCategory, disasterData, weather
     }
 
     if (activeCategory === 'SAFETY') {
-      safetyData?.forEach((facility) => {
-        const pos = new kakao.maps.LatLng(facility.latitude, facility.longitude);
-        const icon = facility.type === 'FIRE_HYDRANT' ? '🚨' : facility.type === 'SHELTER' ? '🏠' : '⚡';
-        const content = document.createElement('div');
-        content.innerHTML = `<div style="cursor:pointer; background:white; color:#333; padding:5px 10px; border:2px solid #4C5CA4; border-radius:20px; font-weight:bold; font-size:12px; display:flex; align-items:center; gap:4px; box-shadow:0 2px 6px rgba(0,0,0,0.15);"><span style="font-size:14px;">${icon}</span><span>${facility.name}</span></div>`;
-        content.onclick = (e) => { e.stopPropagation(); onSelectItem(facility, 'SAFETY'); mapInstance.current.panTo(pos); };
-        const overlay = new kakao.maps.CustomOverlay({ position: pos, content, yAnchor: 1 });
+      safetyFacilities?.forEach((facility) => {
+        const targetLat = facility.latitude ?? (facility as any).centerLatitude ?? (facility as any).lat;
+        const targetLng = facility.longitude ?? (facility as any).centerLongitude ?? (facility as any).lng;
+
+        if (targetLat === undefined || targetLat === null || targetLng === undefined || targetLng === null) return; 
+
+  
+        const pos = new kakao.maps.LatLng(Number(targetLat), Number(targetLng));
+
+        let icon = '⚡'; // 기본값 (AED 등)
+        if (facility.type === 'FIRE_WATER') icon = '🧯'; // 소방용수
+        else if (facility.type === 'SHELTER') icon = '🏠'; // 쉼터/대피소
+        else if (facility.type === 'RESCUE_BOX') icon = '🧰'; // 인명구조함 
         
-        if (facility.type === 'SHELTER') shelterMarkers.push(overlay);
-        else if (facility.type === 'AED') aedMarkers.push(overlay);
-        else if (facility.type === 'FIRE_HYDRANT') hydrantMarkers.push(overlay);
-        overlaysRef.current.push(overlay);
+        let lable = '제세동기'; // 기본값 (AED 등)
+        if (facility.type === 'FIRE_WATER') lable = '소방용수'; // 소방용수
+        else if (facility.type === 'SHELTER') lable = '대피소'; // 쉼터/대피소
+        else if (facility.type === 'RESCUE_BOX') lable = '인명구조함'; // 인명구조함 
+
+        const content = document.createElement('div');
+        content.innerHTML = `
+          <div style="cursor:pointer; background:white; color:#333; padding:5px 10px; border:2px solid #4C5CA4; border-radius:20px; font-weight:bold; font-size:12px; display:flex; align-items:center; gap:4px; box-shadow:0 2px 6px rgba(0,0,0,0.15);">
+            <span style="font-size:14px;">${icon}</span>
+            <span>${lable}</span>
+          </div>
+        `;
+        content.onclick = (e) => { 
+          e.stopPropagation(); 
+          onSelectItem(facility, 'SAFETY'); 
+        };
+        
+        const overlay = new kakao.maps.CustomOverlay({ 
+          position: pos, 
+          content, 
+          yAnchor: 1 
+        });
+        if (facility.type === 'SHELTER') {
+          shelterMarkers.push(overlay);
+        } else if (facility.type === 'AED') {
+          aedMarkers.push(overlay);
+        } else if (facility.type === 'FIRE_WATER') {
+          fireWaterMarkers.push(overlay); 
+        } else if (facility.type === 'RESCUE_BOX') {
+          rescueBoxMarkers.push(overlay); 
+        } 
+        overlaysRef.current.push(overlay); 
       });
     }
 
     if (activeCategory === 'REPORT') {
-      mapReports.forEach((report) => {
-        const pos = new kakao.maps.LatLng(report.latitude, report.longitude);
-        const parts = report.type.split(' ');
-        const icon = parts.length > 1 ? parts[0] : '📍';
-        const label = parts.length > 1 ? parts.slice(1).join(' ') : parts[0];
+      reportMarkers.forEach((report) => {
+        
+        const targetLat = report.pinLatitude ?? (report as any).latitude ?? (report as any).centerLatitude ?? (report as any).lat;
+        const targetLng = report.pinLongitude ?? (report as any).longitude ?? (report as any).centerLongitude ?? (report as any).lng;
+
+        if (targetLat === undefined || targetLat === null || targetLng === undefined || targetLng === null) return; 
+
+  
+        const pos = new kakao.maps.LatLng(Number(targetLat), Number(targetLng));
+        const { icon, label } = REPORT_TYPE[report.type];
+        
         const content = document.createElement('div');
-        content.innerHTML = `<div style="cursor:pointer; background:white; padding:5px 12px; border-radius:20px; border:2px solid #FF8A00; box-shadow:0 2px 8px rgba(0,0,0,0.2); display:flex; align-items:center; gap:5px;"><span style="font-size:14px;">${icon}</span><span style="font-size:12px; font-weight:bold; color:#333;">${label} 제보</span></div>`;
-        content.onclick = (e) => { e.stopPropagation(); onSelectItem(report, 'REPORT'); mapInstance.current.panTo(pos); };
+        content.innerHTML = `
+          <div style="cursor:pointer; background:white; padding:5px 12px; border-radius:20px; border:2px solid #FF8A00; box-shadow:0 2px 8px rgba(0,0,0,0.2); display:flex; align-items:center; gap:5px;">
+            <span style="font-size:14px;">${icon}</span>
+            <span style="font-size:12px; font-weight:bold; color:#333;">${label} 제보</span>
+          </div>
+        `;
+        content.onclick = (e) => { 
+          e.stopPropagation(); 
+          onSelectItem(report, 'REPORT'); 
+        };
+        
         const overlay = new kakao.maps.CustomOverlay({ position: pos, content, yAnchor: 1.2, zIndex: 30 });
-        reportMarkers.push(overlay);
+
+        addreportMarkers.push(overlay);//-
         overlaysRef.current.push(overlay);
       });
     }
 
-    // 4. 각 클러스터러에 마커 주입
+    // 4. 각 클러스터러에 유효 마커 주입
     disasterClusterer.current?.addMarkers(disasterMarkers);
     shelterClusterer.current?.addMarkers(shelterMarkers);
     aedClusterer.current?.addMarkers(aedMarkers);
-    hydrantClusterer.current?.addMarkers(hydrantMarkers);
-    reportClusterer.current?.addMarkers(reportMarkers);
+    fireWaterClusterer.current?.addMarkers(fireWaterMarkers);
+    rescueBoxClusterer.current?.addMarkers(rescueBoxMarkers);
+    reportClusterer.current?.addMarkers(addreportMarkers);
   };
 
   useEffect(() => {
+    if (activeCategory === 'REPORT') {
+      fetchLatestReports();
+    }
+    //  탭 카테고리가 'SAFETY'로 전환될 때 현재 지도 좌표 기준의 데이터를 강제로 1회 당겨오기
+    if (activeCategory === 'SAFETY' && mapInstance.current) {
+      triggerFetchSafetyData();
+    }
+  }, [activeCategory, fetchLatestReports]);
+
+  useEffect(() => {
     if (mapInstance.current) renderItems();
-  }, [disasterData, weatherAlerts, fireStations, safetyData, mapReports, activeCategory, fireMarkers]);
+  }, [disasterData, weatherAlerts, fireStations, safetyFacilities, reportMarkers, fireMarkers, activeCategory]);
 
   return (
     <div className="relative w-full h-full">
       <Script src={KAKAO_SDK_URL} strategy="afterInteractive" onLoad={initMap} />
       
-      {/*0512 화재 마커 애니메이션 스타일 */}
+      {/* 화재 마커 애니메이션 스타일 */}
       <style>{`
         .kakao_scale, .kakao_copyright, [style*="z-index: 1; margin: 0px 6px;"] { display: none !important; }
         
@@ -261,7 +384,6 @@ export default function KakaoMap({ center, activeCategory, disasterData, weather
         }
       `}</style>
       
-      
       <button
         onClick={(e) => { e.stopPropagation(); handleMoveToCurrentLocation(); }}
         className="absolute bottom-6 right-6 z-[20] bg-white p-3 rounded-full shadow-xl border border-gray-100 hover:bg-gray-50 active:scale-95 transition-all"
@@ -275,4 +397,7 @@ export default function KakaoMap({ center, activeCategory, disasterData, weather
       <div ref={mapRef} className="absolute inset-0 w-full h-full" />
     </div>
   );
-}
+});
+
+KakaoMap.displayName = 'KakaoMap';
+export default KakaoMap;

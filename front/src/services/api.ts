@@ -1,11 +1,14 @@
-// 카카오 맵 API 타입을 위한 선언 (에러 방지)
+
+import axios from 'axios';
+
+//----------- 카카오 맵 API 타입을 위한 선언 (에러 방지)----------------
 declare global {
   interface Window {
     kakao: any;
   }
 }
 
-//재난문자 모킹
+//--------------재난문자 모킹-------------------
 export interface DisasterMessage {
   id: number;
   msgId: string;
@@ -19,17 +22,6 @@ export interface DisasterMessage {
   severity: 'LOW' | 'MID' | 'HIGH';
   sentAt: string;
 }
-
-//안전 시설
-export interface SafetyFacility {
-  id: number;
-  type: 'FIRE_HYDRANT' | 'SHELTER' | 'AED';
-  name: string;
-  address: string;
-  latitude: number;
-  longitude: number;
-}
-
 const MOCK_DATA: DisasterMessage[] = [
   {
     id: 1,
@@ -76,8 +68,43 @@ export const getDisasterMessages = async (): Promise<DisasterMessage[]> => {
     setTimeout(() => resolve(MOCK_DATA), 300);
   });
 };
+//-----------------안전 시설-----------------
 
-//기상특보 모킹
+export type SafetyFacilityType = 'AED' | 'FIRE_WATER' | 'RESCUE_BOX' | 'SHELTER';
+
+export interface SafetyFacility {
+  id: Number;
+  type: SafetyFacilityType;   // 시설 종류 (예: "AED", "SHELTER", "FIRE_WATER", "RESCUE_BOX")
+  name: string;               // 시설명 (REARE_NM / MNG_INST_NM 등 백엔드가 매핑한 이름)
+  address: string;            // 주소 (RONA_DADDR / ADDR)
+  latitude: number;           // 위도 (LAT)
+  longitude: number;          // 경도 (LOT)
+  phone?: string | null;      //관리자 번호
+}
+
+export interface GetSafetyFacilitiesParams {
+  swLat: number;         // 지도 남서 위도
+  swLng: number;         // 지도 남서 경도
+  neLat: number;         // 지도 북동 위도
+  neLng: number;         // 지도 북동 경도
+  types?: string;        // 타입 필터 (예: "AED" 또는 "AED,RESCUE_BOX")
+}
+
+export const getSafetyFacilities = async (params: GetSafetyFacilitiesParams): Promise<SafetyFacility[]> => {
+  const response = await api.get<SafetyFacility[]>('/api/safety/facilities', {
+    params: {
+      swLat: params.swLat,
+      swLng: params.swLng,
+      neLat: params.neLat,
+      neLng: params.neLng,
+      types: params.types // 백엔드가 문자열 포맷(AED,RESCUE_BOX)을 원하므로 가이드대로 전달
+    }
+  });
+  
+  return response.data;
+};
+
+//----------------기상특보 모킹--------------------
 export interface WeatherAlert {
   id: number;
   alertId: string;
@@ -123,6 +150,8 @@ export const getWeatherAlerts = async (): Promise<WeatherAlert[]> => {
   });
 };
 
+
+//-------------소방서------------------
 export interface FireStation {
   id: number;
   frstCntrid: string;
@@ -160,7 +189,7 @@ const MOCK_FIRE_STATIONS: FireStation[] = [
   }
 ];
 
-// 특정 소방서 통계 모킹 데이터
+// -----------------특정 소방서 통계 모킹 데이터-----------------------
 const MOCK_FIRE_STATS: Record<number, FireDailyStat> = {
   101: {
     id: 1,
@@ -180,262 +209,140 @@ export const getFireStationStats = async (id: number): Promise<FireDailyStat> =>
   return new Promise((resolve) => setTimeout(() => resolve(MOCK_FIRE_STATS[id]), 200));
 };
 
-export interface CitizenReport {
-  id: number;
-  userId: number;
-  nickname: string; 
-  category: string;
-  latitude: number;      // 재난 위치
-  longitude: number;     // 재난 위치
-  userLatitude: number;  // 제보자 위치
-  userLongitude: number; // 제보자 위치
-  gpsDistanceMeters?: number;
-  gpsVerified: boolean;
-  locationName: string;
-  description: string;
-  imageUrl: string[];   
-  status: 'ACTIVE' | 'RESOLVED' | 'HIDDEN';
-  likeCount: number;
-  reportedAt: string;
-  targetId: number;
-  targetType: 'DISASTER' | 'WEATHER' | 'FIRE' | 'SAFETY';
-  reliability: number;
+
+
+
+//---------------제보 api--------------
+
+const api = axios.create({
+  baseURL: `${process.env.NEXT_PUBLIC_API_URL}`, 
+});
+
+api.interceptors.request.use((config) => {
+  if (typeof window !== 'undefined') {
+    const token = localStorage.getItem('token'); 
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+  }
+  return config;
+}, (error) => {
+  return Promise.reject(error);
+});
+
+export interface Report {
+  id: number;
+  userId: number;
+  nickname: string;
+  type: string;          
+  description: string;
+
+  pinLatitude: number;         
+  pinLongitude: number;        
+
+  userLatitude: number;   
+  userLongitude: number;     
+  userAccuracyMeters: number; // GPS 정확도 오차 범위
+  distanceMeters: number;     // 사고 중심지 또는 마커 간의 계산된 거리
+  gpsVerified: boolean;       // 위치 인증 여부
+  
+  status: string;             // 'ACTIVE' | 'HIDDEN' | 'RESOLVED' 등
+  likeCount: number;          
+  reportCount: number;        // 허위 제보 신고 누적 수
+  imageUrls: string[];       
+  createdAt: string;        
 }
 
-let MOCK_CITIZEN_REPORTS: CitizenReport[] = [
-  {
-    id: 1,
-    userId: 10,
-    nickname: "홍길동",
-    category: "폭우",
-    latitude: 35.143,
-    longitude: 126.924,
-    userLatitude: 35.143,
-    userLongitude: 126.924,
-    gpsVerified: true,
-    locationName: "조선대 정문 앞",
-    description: "폭우 제보",
-    imageUrl: [],
-    status: 'ACTIVE',
-    likeCount: 5,
-    reportedAt: "2026-04-03T16:40:00",
-    targetId: 1,
-    targetType: 'DISASTER',
-    reliability: 100
-  },
-  {
-    id: 2,
-    userId: 11,
-    nickname: "익명 1",
-    category: "화재",
-    latitude: 35.146,
-    longitude: 126.928,
-    userLatitude: 35.146,
-    userLongitude: 126.928,
-    gpsVerified: true,
-    locationName: "서석동 사거리",
-    description: "화재 제보",
-    imageUrl: [],
-    status: 'ACTIVE',
-    likeCount: 2,
-    reportedAt: "2026-04-03T16:47:00",
-    targetId: 2,
-    targetType: 'DISASTER',
-    reliability: 100
-  },
-  {
-    id: 3,
-    userId: 101,
-    nickname: "소방관",
-    category: "소방",
-    latitude: 35.151,
-    longitude: 126.918,
-    userLatitude: 35.151,
-    userLongitude: 126.918,
-    gpsVerified: true,
-    locationName: "광주동부소방서",
-    description: "소방서 제보",
-    imageUrl: [],
-    status: 'ACTIVE',
-    likeCount: 10,
-    reportedAt: "2026-04-03T16:40:00",
-    targetId: 101,
-    targetType: 'FIRE',
-    reliability: 100
-  },
-{
-    id: 4,
-    userId: 12,
-    nickname: "의심스러운사용자",
-    category: "화재",
-    latitude: 35.146,
-    longitude: 126.928,
-    userLatitude: 35.146,
-    userLongitude: 126.928,
-    gpsVerified: true,
-    locationName: "조선대 인근",
-    description: "신뢰도 45점 테스트용입니다.",
-    imageUrl: [],
-    status: 'ACTIVE',
-    likeCount: 0,
-    reportedAt: "2026-04-03T17:00:00",
-    targetId: 2,
-    targetType: 'DISASTER',
-    reliability: 45 // 70 미만이므로 UI에서 흐릿하게 보이거나 필터링 대상
-  },
-  {
-    id: 5,
-    userId: 13,
-    nickname: "길가던사람",
-    category: "화재",
-    latitude: 35.146,
-    longitude: 126.928,
-    userLatitude: 35.146,
-    userLongitude: 126.928,
-    gpsVerified: true,
-    locationName: "서석동 주민센터 인근",
-    description: "신뢰도 75점 테스트용입니다.",
-    imageUrl: [],
-    status: 'ACTIVE',
-    likeCount: 1,
-    reportedAt: "2026-04-03T17:05:00",
-    targetId: 2,
-    targetType: 'DISASTER',
-    reliability: 75 // 정상 노출 기준
-  },
-  {
-    id: 6,
-    userId: 14,
-    nickname: "장난감",
-    category: "화재",
-    latitude: 35.146,
-    longitude: 126.928,
-    userLatitude: 35.146,
-    userLongitude: 126.928,
-    gpsVerified: true,
-    locationName: "동구청 앞",
-    description: "신뢰도 70점 테스트용입니다.",
-    imageUrl: [],
-    status: 'ACTIVE',
-    likeCount: 0,
-    reportedAt: "2026-04-03T17:10:00",
-    targetId: 2,
-    targetType: 'DISASTER',
-    reliability: 70 // 70 미만이므로 흐릿하게 처리 대상
-  }
-];
-export interface CitizenReportCreateInput {
+export type ReportResponse = Report;
+
+export interface ReportCreateRequest {
   type: string;
   description: string;
   pinLatitude: number;
   pinLongitude: number;
   userLatitude: number;
   userLongitude: number;
-  userAccuracyMeters?: number;
-  images?: File[];
+  userAccuracyMeters: number;
+  images?: File[];           
 }
 
-function adaptCitizenReport(data: any): CitizenReport {
-  return {
-    id: data.id,
-    userId: data.userId,
-    nickname: data.nickname,
-    category: data.type,
-    latitude: data.latitude,
-    longitude: data.longitude,
-    userLatitude: data.userLatitude,
-    userLongitude: data.userLongitude,
-    gpsDistanceMeters: data.distanceMeters,
-    gpsVerified: data.gpsVerified,
-    locationName: '',
-    description: data.description,
-    imageUrl: data.imageUrls ?? [],
-    status: data.status,
-    likeCount: data.likeCount ?? 0,
-    reportedAt: data.createdAt,
-    targetId: 0,
-    targetType: 'DISASTER',
-    reliability: 100,
-  };
+export interface ReportUpdateRequest {
+  type: string;
+  description: string;
 }
 
-export const createCitizenReport = async (input: CitizenReportCreateInput): Promise<CitizenReport> => {
+export const getReports = async (): Promise<ReportResponse[]> => {
+  const response = await api.get<ReportResponse[]>('/api/reports');
+  return response.data;
+};
+
+export const createReport = async (data: ReportCreateRequest): Promise<ReportResponse> => {
   const formData = new FormData();
-  formData.append('type', input.type);
-  formData.append('description', input.description);
-  formData.append('pinLatitude', String(input.pinLatitude));
-  formData.append('pinLongitude', String(input.pinLongitude));
-  formData.append('userLatitude', String(input.userLatitude));
-  formData.append('userLongitude', String(input.userLongitude));
-  if (input.userAccuracyMeters != null) {
-    formData.append('userAccuracyMeters', String(input.userAccuracyMeters));
-  }
-  (input.images ?? []).forEach((file) => formData.append('images', file));
+  
+  formData.append('type', data.type);
+  formData.append('description', data.description);
+  formData.append('pinLatitude', String(data.pinLatitude));
+  formData.append('pinLongitude', String(data.pinLongitude));
+  formData.append('userLatitude', String(data.userLatitude));
+  formData.append('userLongitude', String(data.userLongitude));
+  formData.append('userAccuracyMeters', String(data.userAccuracyMeters ?? 0));
 
-  const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/reports`, {
-    method: 'POST',
-    credentials: 'include',
-    body: formData,
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.message ?? '제보 등록에 실패했습니다.');
+  if (data.images && data.images.length > 0) {
+    data.images.forEach((file) => {
+      formData.append('images', file); 
+    });
   }
 
-  return adaptCitizenReport(await res.json());
+  
+  const response = await api.post<ReportResponse>('/api/reports', formData);
+  
+  return response.data;
 };
 
-export const getCitizenReports = async (): Promise<CitizenReport[]> => {
-  const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/reports`, {
-    credentials: 'include',
+export const updateReport = async (
+  reportId: number,
+  data: ReportUpdateRequest
+): Promise<ReportResponse> => {
+  
+  const formData = new FormData();
+  
+  formData.append('type', data.type.trim());
+  formData.append('description', data.description.trim());
+
+  const response = await api.patch<ReportResponse>(`/api/reports/${reportId}`, {
+    type: data.type.trim(),
+    description: data.description.trim(),
   });
-
-  if (!res.ok) throw new Error('제보 목록을 불러오지 못했습니다.');
-
-  const data: any[] = await res.json();
-  return data.map(adaptCitizenReport);
+  
+  return response.data;
 };
 
-export const deleteCitizenReport = async (reportId: number): Promise<boolean> => {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      MOCK_CITIZEN_REPORTS = MOCK_CITIZEN_REPORTS.filter((r) => r.id !== reportId);
-      resolve(true);
-    }, 200);
-  });
+export const deleteReport = async (reportId: number): Promise<boolean> => {
+  try {
+    const response = await api.delete(`/api/reports/${reportId}`);
+    return response.status === 200 || response.status === 204;
+  } catch (error) {
+    console.error("제보 삭제 API 에러:", error);
+    throw error;
+  }
 };
 
-export const likeCitizenReport = async (reportId: number, isAdding: boolean): Promise<CitizenReport> => {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      const report = MOCK_CITIZEN_REPORTS.find((r) => r.id === reportId);
-      if (report) {
-        if (isAdding) {
-          report.likeCount += 1;
-        } else {
-          report.likeCount = Math.max(0, report.likeCount - 1);
-        }
-      }
-      resolve({ ...report! });
-    }, 200);
-  });
+export const toggleLikeReport = async (reportId: number): Promise<boolean> => {
+  const response = await api.post<{ liked: boolean }>(`/api/reports/${reportId}/like`);
+  return response.data.liked;
 };
 
-export const updateCitizenReport = async (reportId: number, description: string): Promise<boolean> => {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      const target = MOCK_CITIZEN_REPORTS.find(r => r.id === reportId);
-      if (target) {
-        target.description = description;
-        resolve(true);
-      } else {
-        resolve(false);
-      }
-    }, 200);
-  });
+export const flagReport = async (reportId: number): Promise<ReportResponse> => {
+  const response = await api.post<ReportResponse>(`/api/reports/${reportId}/flag`);
+  return response.data;
 };
 
+export const getMyLikedReports = async (): Promise<Report[]> => {
+  const response = await api.get<Report[]>('/api/reports/liked');
+  return response.data;
+};
+
+//----------------------댓글피드------------
 export interface ReportComment {
   id: number;
   reportId: number;
@@ -447,67 +354,6 @@ export interface ReportComment {
   targetId: number;
   targetType: 'DISASTER' | 'WEATHER' | 'FIRE' | 'SAFETY' | 'REPORT';
 }
-
-/*export const getComments = async (reportId: number): Promise<ReportComment[]> => {
-  const response = await fetch(`/api/reports/${reportId}/comments`);
-  return response.json();
-};
-
-export const createComment = async (reportId: number, content: string, image?: File) => {
-  const formData = new FormData();
-  formData.append('content', content);
-  if (image) formData.append('image', image);
-
-  const response = await fetch(`/api/reports/${reportId}/comments`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${localStorage.getItem('token')}` // JWT 토큰
-    },
-    body: formData
-  });
-  return response.json();
-}; 
-
-export const MOCK_REPORTS: {
-  id: number;
-  userId: number;
-  nickname: string;
-  locationName: string;
-  description: string;
-  imageUrl: string[];
-  reportedAt: string;
-  comments: ReportComment[]; 
-}[] = [
-  {
-    id: 101,
-    userId: 1,
-    nickname: "119안전센터",
-    locationName: "조선대학교 정문 인근",
-    description: "상가 화재 발생. 주변 도로 통제 중이니 우회 바랍니다.",
-    imageUrl: ["https://example.com/fire1.jpg"],
-    reportedAt: "2026-04-04T20:10:00",
-    comments: [
-      {
-        id: 1,
-        reportId: 101,
-        userId: 999,
-        nickname: "홍길동",
-        content: "현재 소방차 도착해서 진압 중입니다!",
-        imageUrl: null,
-        createdAt: "2026-04-04T20:15:00"
-      },
-      {
-        id: 2,
-        reportId: 101,
-        userId: 42,
-        nickname: "지나가던시민",
-        content: "연기가 너무 심해요. 다들 조심하세요.",
-        imageUrl: null,
-        createdAt: "2026-04-04T20:20:00"
-      }
-    ]
-  }
-]; */
 
 
 let MOCK_SIDEBAR_COMMENTS: ReportComment[] = [
@@ -575,13 +421,6 @@ export const createSidebarComment = async (
   });
 };
 
-export const reportCitizenReport = async (reportId: number, reason: string): Promise<boolean> => {
-  return new Promise((resolve) => {
-    console.log(`제보 ${reportId}번 신고 접수: ${reason}`);
-    setTimeout(() => resolve(true), 200);
-  });
-};
-
 export const deleteSidebarComment = async (commentId: number): Promise<boolean> => {
   return new Promise((resolve) => {
     setTimeout(() => {
@@ -591,156 +430,18 @@ export const deleteSidebarComment = async (commentId: number): Promise<boolean> 
   });
 };
 
-export interface SafetyFacility {
-  id: number;
-  type: 'FIRE_HYDRANT' | 'SHELTER' | 'AED';
-  name: string;
-  address: string;
-  latitude: number;
-  longitude: number;
-  aiSummary: string;       
-  manager?: string;
-  lastCheck?: string;
-  contact?: string;
-  detailLocation?: string;
-}
 
-const MOCK_SAFETY_FACILITIES: SafetyFacility[] = [
-  { 
-    id: 1, 
-    type: 'FIRE_HYDRANT', 
-    name: '소화전', 
-    address: '광주광역시 동구 필문대로 309', 
-    latitude: 35.145, 
-    longitude: 126.927,
-    manager: '광주 동부소방서',
-    lastCheck: '2026-03-20',
-    aiSummary: '주변 5m 이내 주정차 금지 구역입니다. 소방 활동을 위해 항시 비워두세요.'
-  },
-  { 
-    id: 2, 
-    type: 'SHELTER', 
-    name: '대피소', 
-    address: '광주광역시 동구 제봉로 82', 
-    latitude: 35.147, 
-    longitude: 126.922,
-    manager: '광주 동구청 안전과',
-    lastCheck: '2026-04-01',
-    aiSummary: '재난 발생 시 해당 대피소로 대피하세요. 생필품이 비치되어 있습니다.'
-  },
-  { 
-    id: 3, 
-    type: 'AED', 
-    name: '제세동기', 
-    address: '광주광역시 동구 서남로 1', 
-    latitude: 35.146, 
-    longitude: 126.923,
-    manager: '보건소',
-    lastCheck: '2026-01-15',
-    detailLocation: '본관 1층 당직실 앞',
-    aiSummary: '설치 위치: 본관 1층 당직실 앞. 누구나 비상시 즉시 사용 가능합니다.'
-  },
-];
 
-export const getSafetyFacilities = async (): Promise<SafetyFacility[]> => {
-  return new Promise((resolve) => {
-    setTimeout(() => resolve(MOCK_SAFETY_FACILITIES), 300);
-  });
-};
 
-export interface MapReport {
-  id: number;
-  userId: number;
-  type: string;
-  description: string;
-  latitude: number;
-  longitude: number;
-  locationName: string;
-  nickname: string;
-  createdAt: string;
-  likeCount: number;
-}
 
-function adaptToMapReport(data: any): MapReport {
-  return {
-    id: data.id,
-    userId: data.userId,
-    type: data.type,
-    description: data.description,
-    latitude: data.latitude,
-    longitude: data.longitude,
-    locationName: '',
-    nickname: data.nickname ?? '익명',
-    createdAt: data.createdAt,
-    likeCount: data.likeCount ?? 0,
-  };
-}
-
-export const getMapReports = async (): Promise<MapReport[]> => {
-  const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/reports`, {
-    credentials: 'include',
-  });
-  if (!res.ok) throw new Error('제보 목록을 불러오지 못했습니다.');
-  const data: any[] = await res.json();
-  return data.map(adaptToMapReport);
-};
-
-export const createMapReport = async (data: {
-  type: string;
-  description: string;
-  latitude: number;
-  longitude: number;
-  userId: number;
-  userLatitude?: number;
-  userLongitude?: number;
-  userAccuracyMeters?: number;
-}): Promise<MapReport> => {
-  const cleanType = data.type.includes(' ') ? data.type.split(' ').slice(1).join(' ') : data.type;
-
-  const formData = new FormData();
-  formData.append('type', cleanType);
-  formData.append('description', data.description);
-  formData.append('pinLatitude', String(data.latitude));
-  formData.append('pinLongitude', String(data.longitude));
-  formData.append('userLatitude', String(data.userLatitude ?? data.latitude));
-  formData.append('userLongitude', String(data.userLongitude ?? data.longitude));
-  if (data.userAccuracyMeters != null) {
-    formData.append('userAccuracyMeters', String(data.userAccuracyMeters));
-  }
-
-  const token = localStorage.getItem('token');
-  if (!token) throw new Error('로그인 후 제보할 수 있습니다.');
-
-  const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/reports`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-    body: formData,
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.message ?? '제보 등록에 실패했습니다.');
-  }
-
-  return adaptToMapReport(await res.json());
-};
-
-export const getMyMapReports = async (userId: number): Promise<MapReport[]> => {
-  const allReports = await getMapReports();
-  return allReports.filter(report => report.userId === userId);
-};
-
-export const getMyCitizenReports = async (userId: number): Promise<CitizenReport[]> => {
-  const allReports = await getCitizenReports();
-  return allReports.filter(report => report.userId === userId);
-};
+//-------------화재마커------------
 //0512
 export interface FireMarker {
   id: number;
   sn: string;
   messageContent: string;
   rcptnRgnNm: string;
-  parsedAddress: string;
+  parsedAddress?: string | null;
   latitude: number;
   longitude: number;
   createdAt: string;
@@ -783,8 +484,24 @@ export const extractDisasterInfo = async (message: string): Promise<DisasterExtr
 };
 
 
-//신뢰도 기준점 상수화
-export const RELIABILITY_LIMITS = {
-  WARNING: 70, // 70점 이하: 투명도 조절 (주의)
-  BLIND: 50,   // 50점 이하: 화면에서 숨김 (차단)
+
+
+//----------로그인----------
+
+export interface LoginResponse {
+  id: number;
+  token: string;
+  nickname?: string;
+  email: string;
+}
+
+export const googleLogin = async (code: string): Promise<LoginResponse> => {
+  const response = await api.post<LoginResponse>('/member/google/doLogin', { code });
+  return response.data;
 };
+
+export const kakaoLogin = async (code: string): Promise<LoginResponse> => {
+  const response = await api.post<LoginResponse>('/member/kakao/doLogin', { code });
+  return response.data;
+};
+
