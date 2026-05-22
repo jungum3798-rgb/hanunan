@@ -7,6 +7,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/weather")
@@ -22,5 +23,17 @@ public class WeatherDisasterController {
             @RequestParam double lat,
             @RequestParam double lng) {
         return ResponseEntity.ok(weatherDisasterService.getAlertsByLocation(lat, lng));
+    }
+
+    // 테스트용: 임의 기상 재난문자 직접 저장
+    @PostMapping("/test")
+    public ResponseEntity<WeatherAlertDto> testSave(@RequestBody Map<String, String> body) {
+        WeatherAlertDto result = weatherDisasterService.testSave(
+                body.get("message"),
+                body.get("rcptnRgnNm"),
+                body.get("dstSeNm"),
+                body.get("alertLevel")
+        );
+        return ResponseEntity.ok(result);
     }
 }

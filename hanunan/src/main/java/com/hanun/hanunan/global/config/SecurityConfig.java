@@ -61,7 +61,8 @@ public class SecurityConfig {
                                 "/oauth2/**",
                                 "/api/disaster/**",
                                 "/api/fire/**",
-                                "/api/safety/**"
+                                "/api/safety/**",
+                                "/api/weather/**"
                         ).permitAll()
                         .anyRequest().authenticated())
 

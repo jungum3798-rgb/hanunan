@@ -78,6 +78,29 @@ public class WeatherDisasterService {
     }
 
     // ─────────────────────────────────────────
+    // 테스트용: 임의 기상 재난문자 직접 저장
+    // ─────────────────────────────────────────
+    public WeatherAlertDto testSave(String messageContent, String rcptnRgnNm, String dstSeNm, String alertLevel) {
+        String testSn = "TEST-WEATHER-" + System.currentTimeMillis();
+
+        WeatherDisaster entity = WeatherDisaster.builder()
+                .sn(testSn)
+                .messageContent(messageContent)
+                .rcptnRgnNm(rcptnRgnNm)
+                .dstSeNm(dstSeNm)
+                .alertLevel(alertLevel != null ? alertLevel : "안전안내")
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        WeatherDisaster saved = weatherDisasterRepository.save(entity);
+        return new WeatherAlertDto(
+                saved.getId(), saved.getSn(), saved.getMessageContent(),
+                saved.getRcptnRgnNm(), saved.getDstSeNm(),
+                saved.getAlertLevel(), saved.getCreatedAt().toString()
+        );
+    }
+
+    // ─────────────────────────────────────────
     // RCPTN_RGN_NM과 사용자 지역 매칭
     // "전국"은 항상 매칭, 그 외엔 지역 토큰이 포함되는지 확인
     // ─────────────────────────────────────────
