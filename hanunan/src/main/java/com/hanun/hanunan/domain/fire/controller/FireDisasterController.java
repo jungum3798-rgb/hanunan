@@ -2,6 +2,7 @@ package com.hanun.hanunan.domain.fire.controller;
 
 import com.hanun.hanunan.domain.fire.dto.FireMarkerDto;
 import com.hanun.hanunan.domain.fire.service.FireDisasterService;
+import com.hanun.hanunan.global.news.dto.NewsArticleDto;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -22,13 +23,6 @@ public class FireDisasterController {
         return ResponseEntity.ok(fireDisasterService.getAllFireMarkers());
     }
 
-    // 스케줄러 수동 트리거 (실제 API 호출)
-    @PostMapping("/trigger")
-    public ResponseEntity<String> triggerFetch() {
-        fireDisasterService.fetchAndProcessFireMessages();
-        return ResponseEntity.ok("재난문자 조회 및 처리 완료");
-    }
-
     // 임의 재난문자로 전체 파이프라인 테스트
     @PostMapping("/test")
     public ResponseEntity<?> testMessage(@RequestBody Map<String, String> body) {
@@ -37,6 +31,17 @@ public class FireDisasterController {
             String rcptnRgnNm = body.getOrDefault("rcptnRgnNm", "");
             FireMarkerDto result = fireDisasterService.testProcessMessage(message, rcptnRgnNm);
             return ResponseEntity.ok(result);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
+    // 특정 화재에 대한 관련 뉴스 조회 (마커 클릭 시 호출)
+    @GetMapping("/{id}/news")
+    public ResponseEntity<?> getFireNews(@PathVariable Long id) {
+        try {
+            List<NewsArticleDto> news = fireDisasterService.getFireNews(id);
+            return ResponseEntity.ok(news);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         }

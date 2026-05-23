@@ -1,6 +1,7 @@
 package com.hanun.hanunan.global.config;
 
 import com.hanun.hanunan.global.security.JwtTokenFilter;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -48,8 +49,6 @@ public class SecurityConfig {
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
-                // 1. CSRF 보호 비활성화
-                .csrf(csrf -> csrf.disable())
                 // 4. URL별 권한 제어
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.GET, "/api/reports/**", "/uploads/reports/**").permitAll()
@@ -66,10 +65,19 @@ public class SecurityConfig {
                         ).permitAll()
                         .anyRequest().authenticated())
 
-                // 5. JWT 필터 위치 설정
+                // 5. 인증 실패 예외 처리 (토큰 없이 보호된 API 접근 시)
+                .exceptionHandling(exception -> exception
+                        .authenticationEntryPoint((request, response, authException) -> {
+                            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                            response.setContentType("application/json;charset=UTF-8");
+                            response.getWriter().write("{\"code\": \"UNAUTHORIZED\", \"message\": \"인증이 필요합니다.\"}");
+                        })
+                )
+
+                // 6. JWT 필터 위치 설정
                 .addFilterBefore(jwtTokenFilter, UsernamePasswordAuthenticationFilter.class)
 
-                // 6. OAuth2 로그인 (필요 시 주석 해제)
+                // 7. OAuth2 로그인 (필요 시 주석 해제)
                 /*
                 .oauth2Login(oauth2 -> oauth2
                         .successHandler(googleOauth2LoginSuccess))

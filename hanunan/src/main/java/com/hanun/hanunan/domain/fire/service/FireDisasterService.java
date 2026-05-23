@@ -5,6 +5,9 @@ import com.hanun.hanunan.domain.fire.dto.*;
 import com.hanun.hanunan.domain.fire.entity.FireDisaster;
 import com.hanun.hanunan.domain.fire.repository.FireDisasterRepository;
 import com.hanun.hanunan.global.client.DisasterApiClient;
+import com.hanun.hanunan.global.news.dto.NewsArticleDto;
+import com.hanun.hanunan.global.news.repository.DisasterNewsArticleRepository;
+import com.hanun.hanunan.global.news.service.DisasterNewsScheduleService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -28,18 +31,13 @@ public class FireDisasterService {
     private String groqApiUrl;
 
     private final FireDisasterRepository fireDisasterRepository;
+    private final DisasterNewsArticleRepository disasterNewsArticleRepository;
     private final GeocodingService geocodingService;
     private final ObjectMapper objectMapper;
     private final RestTemplate restTemplate;
     private final DisasterApiClient disasterApiClient;
+    private final DisasterNewsScheduleService disasterNewsScheduleService;
 
-    // ─────────────────────────────────────────
-    // 컨트롤러 /trigger 용 - 내부에서 직접 fetch 후 처리
-    // ─────────────────────────────────────────
-    public void fetchAndProcessFireMessages() {
-        log.info("재난문자 API 호출 시작");
-        processItems(disasterApiClient.fetchAll());
-    }
 
     // ─────────────────────────────────────────
     // 스케줄러에서 호출 - 미리 fetch된 아이템 중 화재·산불만 처리
@@ -107,8 +105,11 @@ public class FireDisasterService {
                     .createdAt(LocalDateTime.now())
                     .build();
 
-            fireDisasterRepository.save(fireDisaster);
+            FireDisaster saved = fireDisasterRepository.save(fireDisaster);
             log.info("화재 마커 저장 완료 - SN: {}, 주소: {}", item.getSn(), fullAddress);
+
+            // 뉴스 모니터링 시작 (T+10분 후 Phase1 첫 호출)
+            disasterNewsScheduleService.startMonitoring(saved.getId(), "화재", fullAddress, item.getEmrgStepNm());
 
         } catch (Exception e) {
             log.error("화재 항목 처리 실패 - SN: {}, 오류: {}", item.getSn(), e.getMessage());
@@ -245,6 +246,9 @@ public class FireDisasterService {
         FireDisaster saved = fireDisasterRepository.save(fireDisaster);
         log.info("테스트 화재 마커 저장 완료 - SN: {}, 주소: {}", testSn, fullAddress);
 
+        // 뉴스 모니터링 시작
+        disasterNewsScheduleService.startMonitoring(saved.getId(), "화재", fullAddress, saved.getAlertLevel());
+
         return new FireMarkerDto(
                 saved.getId(), saved.getSn(), saved.getMessageContent(),
                 saved.getRcptnRgnNm(), saved.getParsedAddress(),
@@ -270,6 +274,26 @@ public class FireDisasterService {
                         fire.getCreatedAt().toString(),
                         fire.getAlertLevel()
                 ))
+                .collect(Collectors.toList());
+    }
+
+    // ─────────────────────────────────────────
+    // 특정 화재의 수집된 뉴스 기사 조회 (DB 저장분, 최신순)
+    // ─────────────────────────────────────────
+    public List<NewsArticleDto> getFireNews(Long fireId) {
+        if (!fireDisasterRepository.existsById(fireId)) {
+            throw new IllegalArgumentException("해당 화재 정보를 찾을 수 없습니다. id=" + fireId);
+        }
+
+        return disasterNewsArticleRepository
+                .findByDisasterIdAndDisasterTypeOrderByFetchedAtDesc(fireId, "화재")
+                .stream()
+                .map(article -> NewsArticleDto.builder()
+                        .title(article.getTitle())
+                        .link(article.getLink())
+                        .description(article.getDescription())
+                        .pubDate(article.getPubDate())
+                        .build())
                 .collect(Collectors.toList());
     }
 }
