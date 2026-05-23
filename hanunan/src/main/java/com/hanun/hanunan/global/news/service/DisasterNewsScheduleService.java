@@ -37,7 +37,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class DisasterNewsScheduleService {
 
     // ── 페이즈별 상수 ──────────────────────────────────────────
-    private static final long INITIAL_DELAY_SEC   = 10L;          // TODO: 운영 시 10 * 60L 로 변경 (현재 테스트용 10초)
+    private static final long INITIAL_DELAY_SEC   = 10 * 60L;     // 화재 발생 후 10분 뒤 Phase1 시작
     private static final long PHASE1_INTERVAL_SEC = 5 * 60L;
     private static final int  PHASE1_MAX_CALLS    = 5;
     private static final long PHASE2_INTERVAL_SEC = 15 * 60L;
