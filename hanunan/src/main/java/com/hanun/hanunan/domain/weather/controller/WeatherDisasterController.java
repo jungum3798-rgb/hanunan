@@ -1,5 +1,6 @@
 package com.hanun.hanunan.domain.weather.controller;
 
+import com.hanun.hanunan.domain.weather.dto.WeatherAlertDto;
 import com.hanun.hanunan.domain.weather.dto.WeatherAlertsResponse;
 import com.hanun.hanunan.domain.weather.service.WeatherDisasterService;
 import lombok.RequiredArgsConstructor;
