@@ -4,6 +4,7 @@ import com.hanun.hanunan.domain.fire.dto.DisasterApiItem;
 import com.hanun.hanunan.domain.fire.service.GeocodingService;
 import com.hanun.hanunan.domain.weather.dto.RegionDto;
 import com.hanun.hanunan.domain.weather.dto.WeatherAlertDto;
+import com.hanun.hanunan.domain.weather.dto.WeatherAlertsResponse;
 import com.hanun.hanunan.domain.weather.entity.WeatherDisaster;
 import com.hanun.hanunan.domain.weather.repository.WeatherDisasterRepository;
 import lombok.RequiredArgsConstructor;
@@ -59,12 +60,18 @@ public class WeatherDisasterService {
     // ─────────────────────────────────────────
     // 사용자 GPS 기반 기상 재난문자 조회
     // ─────────────────────────────────────────
-    public List<WeatherAlertDto> getAlertsByLocation(double lat, double lng) {
+    public WeatherAlertsResponse getAlertsByLocation(double lat, double lng) {
         // 1. 역지오코딩: 좌표 → 지역명 토큰 [시/도, 시/군/구, 읍/면/동]
         String[] regionTokens = geocodingService.reverseGeocode(lat, lng);
 
+        RegionDto region = new RegionDto(
+                regionTokens.length > 0 ? regionTokens[0] : "",
+                regionTokens.length > 1 ? regionTokens[1] : "",
+                regionTokens.length > 2 ? regionTokens[2] : ""
+        );
+
         // 2. RCPTN_RGN_NM이 사용자 지역과 겹치는 기상 재난문자 반환
-        return weatherDisasterRepository.findAllByOrderByCreatedAtDesc().stream()
+        List<WeatherAlertDto> alerts = weatherDisasterRepository.findAllByOrderByCreatedAtDesc().stream()
                 .filter(alert -> matchesRegion(alert.getRcptnRgnNm(), regionTokens))
                 .map(alert -> new WeatherAlertDto(
                         alert.getId(),
@@ -76,17 +83,8 @@ public class WeatherDisasterService {
                         alert.getCreatedAt().toString()
                 ))
                 .collect(Collectors.toList());
-    }
 
-    // ─────────────────────────────────────────
-    // 사용자 GPS 기반 지역명 반환
-    // ─────────────────────────────────────────
-    public RegionDto getRegionByLocation(double lat, double lng) {
-        String[] tokens = geocodingService.reverseGeocode(lat, lng);
-        String r1 = tokens.length > 0 ? tokens[0] : "";
-        String r2 = tokens.length > 1 ? tokens[1] : "";
-        String r3 = tokens.length > 2 ? tokens[2] : "";
-        return new RegionDto(r1, r2, r3);
+        return new WeatherAlertsResponse(region, alerts);
     }
 
     // ─────────────────────────────────────────
