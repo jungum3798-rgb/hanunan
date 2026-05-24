@@ -1,5 +1,6 @@
 package com.hanun.hanunan.domain.weather.controller;
 
+import com.hanun.hanunan.domain.weather.dto.RegionDto;
 import com.hanun.hanunan.domain.weather.dto.WeatherAlertDto;
 import com.hanun.hanunan.domain.weather.service.WeatherDisasterService;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +24,15 @@ public class WeatherDisasterController {
             @RequestParam double lat,
             @RequestParam double lng) {
         return ResponseEntity.ok(weatherDisasterService.getAlertsByLocation(lat, lng));
+    }
+
+    // 사용자 GPS 기반 지역명 조회
+    // 예: GET /api/weather/location?lat=37.5665&lng=126.9780
+    @GetMapping("/location")
+    public ResponseEntity<RegionDto> getLocation(
+            @RequestParam double lat,
+            @RequestParam double lng) {
+        return ResponseEntity.ok(weatherDisasterService.getRegionByLocation(lat, lng));
     }
 
     // 테스트용: 임의 기상 재난문자 직접 저장

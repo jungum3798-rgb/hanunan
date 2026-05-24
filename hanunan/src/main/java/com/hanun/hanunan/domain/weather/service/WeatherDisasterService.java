@@ -2,6 +2,7 @@ package com.hanun.hanunan.domain.weather.service;
 
 import com.hanun.hanunan.domain.fire.dto.DisasterApiItem;
 import com.hanun.hanunan.domain.fire.service.GeocodingService;
+import com.hanun.hanunan.domain.weather.dto.RegionDto;
 import com.hanun.hanunan.domain.weather.dto.WeatherAlertDto;
 import com.hanun.hanunan.domain.weather.entity.WeatherDisaster;
 import com.hanun.hanunan.domain.weather.repository.WeatherDisasterRepository;
@@ -75,6 +76,17 @@ public class WeatherDisasterService {
                         alert.getCreatedAt().toString()
                 ))
                 .collect(Collectors.toList());
+    }
+
+    // ─────────────────────────────────────────
+    // 사용자 GPS 기반 지역명 반환
+    // ─────────────────────────────────────────
+    public RegionDto getRegionByLocation(double lat, double lng) {
+        String[] tokens = geocodingService.reverseGeocode(lat, lng);
+        String r1 = tokens.length > 0 ? tokens[0] : "";
+        String r2 = tokens.length > 1 ? tokens[1] : "";
+        String r3 = tokens.length > 2 ? tokens[2] : "";
+        return new RegionDto(r1, r2, r3);
     }
 
     // ─────────────────────────────────────────
