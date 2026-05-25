@@ -61,7 +61,8 @@ public class SecurityConfig {
                                 "/api/disaster/**",
                                 "/api/fire/**",
                                 "/api/safety/**",
-                                "/api/weather/**"
+                                "/api/weather/**",
+                                "/api/test/**"
                         ).permitAll()
                         .anyRequest().authenticated())
 

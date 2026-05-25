@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hanun.hanunan.domain.fire.dto.*;
 import com.hanun.hanunan.domain.fire.entity.FireDisaster;
 import com.hanun.hanunan.domain.fire.repository.FireDisasterRepository;
+import com.hanun.hanunan.global.casualty.dto.CasualtyInfoDto;
+import com.hanun.hanunan.global.casualty.service.CasualtyExtractionService;
 import com.hanun.hanunan.global.client.DisasterApiClient;
 import com.hanun.hanunan.global.news.dto.NewsArticleDto;
 import com.hanun.hanunan.global.news.repository.DisasterNewsArticleRepository;
@@ -16,7 +18,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -32,6 +37,7 @@ public class FireDisasterService {
 
     private final FireDisasterRepository fireDisasterRepository;
     private final DisasterNewsArticleRepository disasterNewsArticleRepository;
+    private final CasualtyExtractionService casualtyExtractionService;
     private final GeocodingService geocodingService;
     private final ObjectMapper objectMapper;
     private final RestTemplate restTemplate;
@@ -102,14 +108,14 @@ public class FireDisasterService {
                     .parsedAddress(fullAddress)
                     .latitude(coords[0])
                     .longitude(coords[1])
-                    .createdAt(LocalDateTime.now())
+                    .createdAt(parseCrtDt(item.getCrtDt()))
                     .build();
 
             FireDisaster saved = fireDisasterRepository.save(fireDisaster);
             log.info("화재 마커 저장 완료 - SN: {}, 주소: {}", item.getSn(), fullAddress);
 
             // 뉴스 모니터링 시작 (T+10분 후 Phase1 첫 호출)
-            disasterNewsScheduleService.startMonitoring(saved.getId(), "화재", fullAddress, item.getEmrgStepNm());
+            disasterNewsScheduleService.startMonitoring(saved.getId(), "화재", fullAddress, item.getEmrgStepNm(), saved.getCreatedAt());
 
         } catch (Exception e) {
             log.error("화재 항목 처리 실패 - SN: {}, 오류: {}", item.getSn(), e.getMessage());
@@ -213,10 +219,24 @@ public class FireDisasterService {
 
 
 
+    // CRT_DT 파싱 (예: "2025/05/11 11:00:00" 또는 "2025-05-11 11:00:00")
+    // 파싱 실패 시 현재 시각으로 fallback
+    private LocalDateTime parseCrtDt(String crtDt) {
+        if (crtDt == null || crtDt.isBlank()) return LocalDateTime.now();
+        String[] patterns = {"yyyy/MM/dd HH:mm:ss", "yyyy-MM-dd HH:mm:ss", "yyyyMMddHHmmss"};
+        for (String pattern : patterns) {
+            try {
+                return LocalDateTime.parse(crtDt.trim(), DateTimeFormatter.ofPattern(pattern));
+            } catch (DateTimeParseException ignored) {}
+        }
+        log.warn("CRT_DT 파싱 실패, 현재 시각 사용 - crtDt: {}", crtDt);
+        return LocalDateTime.now();
+    }
+
     // ─────────────────────────────────────────
     // 테스트용: 임의 재난문자 직접 처리
     // ─────────────────────────────────────────
-    public FireMarkerDto testProcessMessage(String messageContent, String rcptnRgnNm) {
+    public FireMarkerDto testProcessMessage(String messageContent, String rcptnRgnNm, String occurredAt) {
         String testSn = "TEST-" + System.currentTimeMillis();
 
         GroqLocationResult locationResult = parseLocationWithGroq(messageContent);
@@ -232,6 +252,10 @@ public class FireDisasterService {
             throw new IllegalArgumentException("좌표 변환 실패 - 주소: " + fullAddress);
         }
 
+        LocalDateTime createdAt = (occurredAt != null && !occurredAt.isBlank())
+                ? LocalDateTime.parse(occurredAt)
+                : LocalDateTime.now();
+
         FireDisaster fireDisaster = FireDisaster.builder()
                 .sn(testSn)
                 .messageContent(messageContent)
@@ -240,14 +264,14 @@ public class FireDisasterService {
                 .parsedAddress(fullAddress)
                 .latitude(coords[0])
                 .longitude(coords[1])
-                .createdAt(LocalDateTime.now())
+                .createdAt(createdAt)
                 .build();
 
         FireDisaster saved = fireDisasterRepository.save(fireDisaster);
         log.info("테스트 화재 마커 저장 완료 - SN: {}, 주소: {}", testSn, fullAddress);
 
         // 뉴스 모니터링 시작
-        disasterNewsScheduleService.startMonitoring(saved.getId(), "화재", fullAddress, saved.getAlertLevel());
+        disasterNewsScheduleService.startMonitoring(saved.getId(), "화재", fullAddress, saved.getAlertLevel(), saved.getCreatedAt());
 
         return new FireMarkerDto(
                 saved.getId(), saved.getSn(), saved.getMessageContent(),
@@ -278,6 +302,16 @@ public class FireDisasterService {
     }
 
     // ─────────────────────────────────────────
+    // 특정 화재의 피해 정보 조회
+    // ─────────────────────────────────────────
+    public Optional<CasualtyInfoDto> getFireCasualty(Long fireId) {
+        if (!fireDisasterRepository.existsById(fireId)) {
+            throw new IllegalArgumentException("해당 화재 정보를 찾을 수 없습니다. id=" + fireId);
+        }
+        return casualtyExtractionService.getCasualtyInfo(fireId, "화재");
+    }
+
+    // ─────────────────────────────────────────
     // 특정 화재의 수집된 뉴스 기사 조회 (DB 저장분, 최신순)
     // ─────────────────────────────────────────
     public List<NewsArticleDto> getFireNews(Long fireId) {
@@ -286,7 +320,7 @@ public class FireDisasterService {
         }
 
         return disasterNewsArticleRepository
-                .findByDisasterIdAndDisasterTypeOrderByFetchedAtDesc(fireId, "화재")
+                .findTop10ByDisasterIdAndDisasterTypeOrderByFetchedAtDesc(fireId, "화재")
                 .stream()
                 .map(article -> NewsArticleDto.builder()
                         .title(article.getTitle())

@@ -47,13 +47,17 @@ public class NaverNewsService {
 
         return rawItems.stream()
                 .map(item -> {
-                    String link = (item.getOriginallink() != null && !item.getOriginallink().isBlank())
+                    // 표시용: originallink 우선 (언론사 원문)
+                    String displayLink = (item.getOriginallink() != null && !item.getOriginallink().isBlank())
                             ? item.getOriginallink()
                             : item.getLink();
+                    // 크롤링용: 네이버 미러 URL (n.news.naver.com) - 봇 차단 없이 크롤링 가능
+                    String naverLink = item.getLink();
 
                     return NewsArticleDto.builder()
                             .title(stripHtml(item.getTitle()))
-                            .link(link)
+                            .link(displayLink)
+                            .naverLink(naverLink)
                             .description(stripHtml(item.getDescription()))
                             .pubDate(item.getPubDate())
                             .build();

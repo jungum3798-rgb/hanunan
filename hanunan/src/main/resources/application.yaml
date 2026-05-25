@@ -56,6 +56,11 @@ groq:
     key: ${GROQ_API_KEY}
     url: https://api.groq.com/openai/v1/chat/completions
 
+gemini:
+  api:
+    key: ${GEMINI_API_KEY}
+    url: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent
+
 naver:
   news:
     client-id: ${NAVER_NEWS_CLIENT_ID}
