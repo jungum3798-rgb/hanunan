@@ -51,7 +51,7 @@ public class SecurityConfig {
 
                 // 4. URL별 권한 제어
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(HttpMethod.GET, "/api/reports/**", "/uploads/reports/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/reports/**", "/uploads/reports/**", "/api/comments/**").permitAll()
                         .requestMatchers(
                                 "/member/create",
                                 "/member/doLogin",
