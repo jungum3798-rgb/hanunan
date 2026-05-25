@@ -9,6 +9,11 @@ import com.hanun.hanunan.domain.fire.dto.GroqLocationResult;
 import com.hanun.hanunan.domain.fire.dto.GroqRequest;
 import com.hanun.hanunan.domain.fire.dto.GroqResponse;
 import com.hanun.hanunan.domain.fire.service.GeocodingService;
+import com.hanun.hanunan.global.casualty.dto.CasualtyInfoDto;
+import com.hanun.hanunan.global.casualty.service.CasualtyExtractionService;
+import com.hanun.hanunan.global.news.dto.NewsArticleDto;
+import com.hanun.hanunan.global.news.repository.DisasterNewsArticleRepository;
+import com.hanun.hanunan.global.news.service.DisasterNewsScheduleService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -17,7 +22,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -35,6 +43,9 @@ public class DisasterAlertService {
     private String groqApiUrl;
 
     private final DisasterAlertRepository disasterAlertRepository;
+    private final DisasterNewsArticleRepository disasterNewsArticleRepository;
+    private final DisasterNewsScheduleService disasterNewsScheduleService;
+    private final CasualtyExtractionService casualtyExtractionService;
     private final GeocodingService geocodingService;
     private final ObjectMapper objectMapper;
     private final RestTemplate restTemplate;
@@ -85,11 +96,14 @@ public class DisasterAlertService {
                     .parsedAddress(fullAddress)
                     .latitude(coords[0])
                     .longitude(coords[1])
-                    .createdAt(LocalDateTime.now())
+                    .createdAt(parseCrtDt(item.getCrtDt()))
                     .build();
 
-            disasterAlertRepository.save(alert);
+            DisasterAlert saved = disasterAlertRepository.save(alert);
             log.info("재난 알림 마커 저장 완료 - SN: {}, 유형: {}, 주소: {}", item.getSn(), item.getDstSeNm(), fullAddress);
+
+            // 뉴스 모니터링 시작 (T+10분 후 Phase1 첫 호출)
+            disasterNewsScheduleService.startMonitoring(saved.getId(), item.getDstSeNm(), fullAddress, item.getEmrgStepNm(), saved.getCreatedAt());
 
         } catch (Exception e) {
             log.error("재난 알림 항목 처리 실패 - SN: {}, 오류: {}", item.getSn(), e.getMessage());
@@ -166,6 +180,42 @@ public class DisasterAlertService {
         }
 
         return prefix.isEmpty() ? parsedAddress : prefix + " " + parsedAddress;
+    }
+
+    private LocalDateTime parseCrtDt(String crtDt) {
+        if (crtDt == null || crtDt.isBlank()) return LocalDateTime.now();
+        String[] patterns = {"yyyy/MM/dd HH:mm:ss", "yyyy-MM-dd HH:mm:ss", "yyyyMMddHHmmss"};
+        for (String pattern : patterns) {
+            try {
+                return LocalDateTime.parse(crtDt.trim(), DateTimeFormatter.ofPattern(pattern));
+            } catch (DateTimeParseException ignored) {}
+        }
+        log.warn("CRT_DT 파싱 실패, 현재 시각 사용 - crtDt: {}", crtDt);
+        return LocalDateTime.now();
+    }
+
+    public Optional<CasualtyInfoDto> getDisasterCasualty(Long disasterId, String disasterType) {
+        if (!disasterAlertRepository.existsById(disasterId)) {
+            throw new IllegalArgumentException("해당 재난 정보를 찾을 수 없습니다. id=" + disasterId);
+        }
+        return casualtyExtractionService.getCasualtyInfo(disasterId, disasterType);
+    }
+
+    public List<NewsArticleDto> getDisasterNews(Long disasterId, String disasterType) {
+        if (!disasterAlertRepository.existsById(disasterId)) {
+            throw new IllegalArgumentException("해당 재난 정보를 찾을 수 없습니다. id=" + disasterId);
+        }
+
+        return disasterNewsArticleRepository
+                .findTop10ByDisasterIdAndDisasterTypeOrderByFetchedAtDesc(disasterId, disasterType)
+                .stream()
+                .map(article -> NewsArticleDto.builder()
+                        .title(article.getTitle())
+                        .link(article.getLink())
+                        .description(article.getDescription())
+                        .pubDate(article.getPubDate())
+                        .build())
+                .collect(Collectors.toList());
     }
 
     public List<DisasterAlertMarkerDto> getAllAlertMarkers() {

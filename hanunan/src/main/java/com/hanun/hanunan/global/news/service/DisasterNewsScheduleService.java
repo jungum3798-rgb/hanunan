@@ -10,7 +10,10 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -37,8 +40,8 @@ import java.util.concurrent.ConcurrentHashMap;
 public class DisasterNewsScheduleService {
 
     // ── 페이즈별 상수 ──────────────────────────────────────────
-    private static final long INITIAL_DELAY_SEC   = 10 * 60L;     // 화재 발생 후 10분 뒤 Phase1 시작
-    private static final long PHASE1_INTERVAL_SEC = 5 * 60L;
+    private static final long INITIAL_DELAY_SEC   = 10 * 60L;      // 10분 후 첫 수집
+    private static final long PHASE1_INTERVAL_SEC = 5 * 60L;       // Phase1: 5분 간격
     private static final int  PHASE1_MAX_CALLS    = 5;
     private static final long PHASE2_INTERVAL_SEC = 15 * 60L;
     private static final int  PHASE2_MAX_CALLS    = 4;
@@ -66,16 +69,18 @@ public class DisasterNewsScheduleService {
     /**
      * 재난 발생 시 뉴스 모니터링을 시작합니다.
      *
-     * @param disasterId    재난 엔티티 PK
-     * @param disasterType  재난 유형 ("화재", "붕괴", "테러", "폭발", "홍수", "산사태")
-     * @param parsedAddress 재난 발생 주소
-     * @param alertLevel    긴급 단계 ("안전안내", "긴급재난", "위급재난")
+     * @param disasterId        재난 엔티티 PK
+     * @param disasterType      재난 유형 ("화재", "붕괴", "테러", "폭발", "홍수", "산사태")
+     * @param parsedAddress     재난 발생 주소
+     * @param alertLevel        긴급 단계 ("안전안내", "긴급재난", "위급재난")
+     * @param disasterOccurredAt 재난 발생 시각 (이 시각 이후 발행된 기사만 수집)
      */
-    public void startMonitoring(Long disasterId, String disasterType, String parsedAddress, String alertLevel) {
+    public void startMonitoring(Long disasterId, String disasterType, String parsedAddress,
+                                String alertLevel, LocalDateTime disasterOccurredAt) {
         String key = monitorKey(disasterType, disasterId);
-        MonitoringState state = new MonitoringState(disasterId, disasterType, parsedAddress, alertLevel);
+        MonitoringState state = new MonitoringState(disasterId, disasterType, parsedAddress, alertLevel, disasterOccurredAt);
         activeMonitors.put(key, state);
-        log.info("[뉴스 모니터링 시작] key={}, 주소={}, 긴급단계={}", key, parsedAddress, alertLevel);
+        log.info("[뉴스 모니터링 시작] key={}, 주소={}, 긴급단계={}, 발생시각={}", key, parsedAddress, alertLevel, disasterOccurredAt);
         scheduleCall(key, INITIAL_DELAY_SEC);
     }
 
@@ -105,6 +110,12 @@ public class DisasterNewsScheduleService {
         int savedCount = 0;
         for (NewsArticleDto article : fetched) {
             if (article.getLink() == null || state.seenLinks.contains(article.getLink())) continue;
+
+            // 재난 발생 시각 이전에 발행된 기사 제외
+            if (!isPublishedAfterDisaster(article.getPubDate(), state.disasterOccurredAt)) {
+                log.info("[뉴스 모니터링] 재난 발생 이전 기사 제외 - pubDate: {}", article.getPubDate());
+                continue;
+            }
 
             state.seenLinks.add(article.getLink());
             disasterNewsArticleRepository.save(DisasterNewsArticle.builder()
@@ -206,14 +217,36 @@ public class DisasterNewsScheduleService {
         return disasterType + ":" + disasterId;
     }
 
+    // 네이버 뉴스 pubDate 형식: "Mon, 21 Jul 2025 07:21:00 +0900"
+    private static final DateTimeFormatter NAVER_DATE_FORMAT =
+            DateTimeFormatter.ofPattern("EEE, dd MMM yyyy HH:mm:ss Z", Locale.ENGLISH);
+
+    /**
+     * 기사 발행일이 재난 발생 시각 이후인지 확인합니다.
+     * pubDate 파싱 실패 시 안전하게 true 반환 (수집 허용)
+     */
+    private boolean isPublishedAfterDisaster(String pubDate, LocalDateTime disasterOccurredAt) {
+        if (pubDate == null || pubDate.isBlank() || disasterOccurredAt == null) return true;
+        try {
+            ZonedDateTime articleTime = ZonedDateTime.parse(pubDate.trim(), NAVER_DATE_FORMAT);
+            ZonedDateTime disasterTime = disasterOccurredAt.atZone(
+                    java.time.ZoneId.of("Asia/Seoul"));
+            return !articleTime.isBefore(disasterTime);
+        } catch (Exception e) {
+            log.warn("[뉴스 모니터링] pubDate 파싱 실패, 수집 허용 - pubDate: {}", pubDate);
+            return true;
+        }
+    }
+
     // ═══════════════════════════════════════════════════════════
     // 모니터링 상태 (재난별 인메모리)
     // ═══════════════════════════════════════════════════════════
     private static class MonitoringState {
-        final long   disasterId;
-        final String disasterType;
-        final String parsedAddress;
-        final String alertLevel;
+        final long          disasterId;
+        final String        disasterType;
+        final String        parsedAddress;
+        final String        alertLevel;
+        final LocalDateTime disasterOccurredAt; // 재난 발생 시각 (이후 기사만 수집)
 
         int phase            = 1;
         int callCount        = 0;
@@ -221,11 +254,13 @@ public class DisasterNewsScheduleService {
 
         final Set<String> seenLinks = ConcurrentHashMap.newKeySet();
 
-        MonitoringState(long disasterId, String disasterType, String parsedAddress, String alertLevel) {
-            this.disasterId    = disasterId;
-            this.disasterType  = disasterType;
-            this.parsedAddress = parsedAddress;
-            this.alertLevel    = alertLevel;
+        MonitoringState(long disasterId, String disasterType, String parsedAddress,
+                        String alertLevel, LocalDateTime disasterOccurredAt) {
+            this.disasterId         = disasterId;
+            this.disasterType       = disasterType;
+            this.parsedAddress      = parsedAddress;
+            this.alertLevel         = alertLevel;
+            this.disasterOccurredAt = disasterOccurredAt;
         }
     }
 }
