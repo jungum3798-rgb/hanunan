@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hanun.hanunan.domain.disaster.dto.DisasterAlertMarkerDto;
 import com.hanun.hanunan.domain.disaster.entity.DisasterAlert;
 import com.hanun.hanunan.domain.disaster.repository.DisasterAlertRepository;
-import com.hanun.hanunan.domain.fire.dto.DisasterApiItem;
+import com.hanun.hanunan.global.client.dto.DisasterApiItem;
 import com.hanun.hanunan.domain.fire.dto.GroqLocationResult;
 import com.hanun.hanunan.domain.fire.dto.GroqRequest;
 import com.hanun.hanunan.domain.fire.dto.GroqResponse;
@@ -14,6 +14,7 @@ import com.hanun.hanunan.global.casualty.service.CasualtyExtractionService;
 import com.hanun.hanunan.global.news.dto.NewsArticleDto;
 import com.hanun.hanunan.global.news.repository.DisasterNewsArticleRepository;
 import com.hanun.hanunan.global.news.service.DisasterNewsScheduleService;
+import com.hanun.hanunan.global.sse.SseEmitterService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -46,6 +47,7 @@ public class DisasterAlertService {
     private final DisasterNewsArticleRepository disasterNewsArticleRepository;
     private final DisasterNewsScheduleService disasterNewsScheduleService;
     private final CasualtyExtractionService casualtyExtractionService;
+    private final SseEmitterService sseEmitterService;
     private final GeocodingService geocodingService;
     private final ObjectMapper objectMapper;
     private final RestTemplate restTemplate;
@@ -101,6 +103,15 @@ public class DisasterAlertService {
 
             DisasterAlert saved = disasterAlertRepository.save(alert);
             log.info("재난 알림 마커 저장 완료 - SN: {}, 유형: {}, 주소: {}", item.getSn(), item.getDstSeNm(), fullAddress);
+
+            // SSE로 연결된 프론트에 신규 재난 마커 실시간 전송
+            sseEmitterService.broadcastDisaster(new DisasterAlertMarkerDto(
+                    saved.getId(), saved.getSn(), saved.getMessageContent(),
+                    saved.getRcptnRgnNm(), saved.getParsedAddress(),
+                    saved.getLatitude(), saved.getLongitude(),
+                    saved.getCreatedAt().toString(), saved.getAlertLevel(),
+                    saved.getDisasterType()
+            ));
 
             // 뉴스 모니터링 시작 (T+10분 후 Phase1 첫 호출)
             disasterNewsScheduleService.startMonitoring(saved.getId(), item.getDstSeNm(), fullAddress, item.getEmrgStepNm(), saved.getCreatedAt());

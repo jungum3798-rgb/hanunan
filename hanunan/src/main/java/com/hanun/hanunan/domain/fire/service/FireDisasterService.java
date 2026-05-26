@@ -2,6 +2,7 @@ package com.hanun.hanunan.domain.fire.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hanun.hanunan.domain.fire.dto.*;
+import com.hanun.hanunan.global.client.dto.DisasterApiItem;
 import com.hanun.hanunan.domain.fire.entity.FireDisaster;
 import com.hanun.hanunan.domain.fire.repository.FireDisasterRepository;
 import com.hanun.hanunan.global.casualty.dto.CasualtyInfoDto;
@@ -10,6 +11,7 @@ import com.hanun.hanunan.global.client.DisasterApiClient;
 import com.hanun.hanunan.global.news.dto.NewsArticleDto;
 import com.hanun.hanunan.global.news.repository.DisasterNewsArticleRepository;
 import com.hanun.hanunan.global.news.service.DisasterNewsScheduleService;
+import com.hanun.hanunan.global.sse.SseEmitterService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -43,6 +45,7 @@ public class FireDisasterService {
     private final RestTemplate restTemplate;
     private final DisasterApiClient disasterApiClient;
     private final DisasterNewsScheduleService disasterNewsScheduleService;
+    private final SseEmitterService sseEmitterService;
 
 
     // ─────────────────────────────────────────
@@ -113,6 +116,14 @@ public class FireDisasterService {
 
             FireDisaster saved = fireDisasterRepository.save(fireDisaster);
             log.info("화재 마커 저장 완료 - SN: {}, 주소: {}", item.getSn(), fullAddress);
+
+            // SSE로 연결된 프론트에 신규 화재 마커 실시간 전송
+            sseEmitterService.broadcastFire(new FireMarkerDto(
+                    saved.getId(), saved.getSn(), saved.getMessageContent(),
+                    saved.getRcptnRgnNm(), saved.getParsedAddress(),
+                    saved.getLatitude(), saved.getLongitude(),
+                    saved.getCreatedAt().toString(), saved.getAlertLevel()
+            ));
 
             // 뉴스 모니터링 시작 (T+10분 후 Phase1 첫 호출)
             disasterNewsScheduleService.startMonitoring(saved.getId(), "화재", fullAddress, item.getEmrgStepNm(), saved.getCreatedAt());
