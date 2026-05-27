@@ -1,6 +1,6 @@
 package com.hanun.hanunan.domain.weather.service;
 
-import com.hanun.hanunan.domain.fire.dto.DisasterApiItem;
+import com.hanun.hanunan.global.client.dto.DisasterApiItem;
 import com.hanun.hanunan.domain.fire.service.GeocodingService;
 import com.hanun.hanunan.domain.weather.dto.RegionDto;
 import com.hanun.hanunan.domain.weather.dto.WeatherAlertDto;

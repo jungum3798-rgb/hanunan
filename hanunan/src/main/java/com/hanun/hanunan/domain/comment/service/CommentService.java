@@ -47,8 +47,9 @@ public class CommentService {
         return commentRepository.findByTypeOrderByCreatedAtDesc(type);
     }
 
+    // 삭제 후 브로드캐스트를 위해 type 반환
     @Transactional
-    public void delete(String memberEmail, Long commentId) {
+    public String deleteAndGetType(String memberEmail, Long commentId) {
         Comment comment = commentRepository.findById(commentId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 댓글입니다."));
 
@@ -56,7 +57,9 @@ public class CommentService {
             throw new AccessDeniedException("본인의 댓글만 삭제할 수 있습니다.");
         }
 
+        String type = comment.getType().name();
         commentRepository.delete(comment);
+        return type;
     }
 
     private CommentType parseType(String typeStr) {

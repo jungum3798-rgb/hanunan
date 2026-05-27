@@ -18,17 +18,18 @@ import { getDistance } from "@/utils/mapUtils";
 
 import { useInfoPanel } from "@hooks/useInfoPanel";
 import { useCategory } from "@hooks/useCategory";
+//import { useGeocodedWeatherAlerts } from "@hooks/useGeocodedWeatherAlerts";
 import { getFireStage } from "@utils/fireUtils";
 import {
     getDisasterMessages,
-    getWeatherAlerts,
+    getWeatherAlertsByLocation,
     getFireStations,
-    getSidebarComments,
     DisasterMessage,
     WeatherAlert,
     FireStation,
-    fetchFireMarkers, 
-    FireMarker, 
+    connectSse,
+    FireMarker,
+    DisasterAlertMarker,
     Report,
     getReports, 
     createReport, 
@@ -37,7 +38,8 @@ import {
     toggleLikeReport, 
     flagReport,
     SafetyFacility,
-    getSafetyFacilities
+    getSafetyFacilities,
+    Region
 } from '@/services/api';
 
 
@@ -46,10 +48,11 @@ export default function DashboardPage() {
 
     const [disasters, setDisasters] = useState<DisasterMessage[]>([]);
     const [weatherAlerts, setWeatherAlerts] = useState<WeatherAlert[]>([]);
+    const [regionInfo, setRegionInfo] = useState<Region | null>(null); //기상재난문자 유저 주소
     const [fireStations, setFireStations] = useState<FireStation[]>([]);
 
     const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
-    const [isReportModalOpen, setIsReportModalOpen] = useState(false); // 💡 모달 제어 기준 상태 변수
+    const [isReportModalOpen, setIsReportModalOpen] = useState(false); 
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
     const [isReportWriteModalOpen, setIsReportWriteModalOpen] = useState(false);
@@ -64,8 +67,10 @@ export default function DashboardPage() {
 
     const [position] = useState({ lat: 35.143, lng: 126.924 });
     const [userLocation, setUserLocation] = useState<{ lat: number, lng: number } | null>(null);
+    //const geocodedWeatherAlerts = useGeocodedWeatherAlerts(weatherAlerts, userLocation);
 
-    const [fireMarkers, setFireMarkers] = useState<FireMarker[]>([]); 
+    const [fireMarkers, setFireMarkers] = useState<FireMarker[]>([]);
+    const [disasterAlertMarkers, setDisasterAlertMarkers] = useState<DisasterAlertMarker[]>([]);
 
     const mapRef = useRef<any>(null); 
 
@@ -83,7 +88,7 @@ export default function DashboardPage() {
                 const reportsData = await getReports();
                 setAllReports(reportsData);
             } catch (err) {
-                console.error("초기 레포트 데이터 로딩 실패:", err);
+                console.log("만료 토큰 차단 완료 (getReports)");
             }
         };
         initData();
@@ -115,12 +120,12 @@ export default function DashboardPage() {
             const data = await getReports(); 
             setAllReports(data); 
         } catch (error) {
-            console.error("레포트 목록 갱신 실패:", error);
+            console.log("만료 토큰 차단 완료 (getReports)");
         }
     };
 
     const reportMarkers = useMemo(() => {
-    return allReports.filter(report => report.type==='화재' || report.type === '기상');
+    return allReports.filter(report => report.type==='화재' || report.type === '기상' || report.type === '기타');
     }, [allReports]);
 
     const reportByMarkers = useMemo(() => {
@@ -132,7 +137,7 @@ export default function DashboardPage() {
         if (!targetLat || !targetLng) return [];
 
         return allReports.filter(report => {
-            if (report.type === '화재' || report.type === '기상') return false;
+            if (report.type === '화재' || report.type === '기상' || report.type === '기타') return false;
 
             const reportLat = Number(report.pinLatitude ?? (report as any).latitude ?? (report as any).centerLatitude ?? (report as any).lat);
             const reportLng = Number(report.pinLongitude ?? (report as any).longitude ?? (report as any).centerLongitude ?? (report as any).lng);
@@ -146,26 +151,35 @@ export default function DashboardPage() {
     }, [allReports, selectedItem]);
 
 
-    //FireMarkers GET
+    // SSE — 화재·기타 재난 마커 실시간 수신
     useEffect(() => {
-        const loadFireData = async () => {
-            try {
-                const data = await fetchFireMarkers();
-                setFireMarkers(data);
-            } catch (error) {
-                console.error("화재 마커 로드 에러:", error);
-            }
-        };
+        const prependUnique = <T extends { id: number }>(prev: T[], item: T) =>
+            prev.some((m) => m.id === item.id) ? prev : [item, ...prev];
 
-        loadFireData();
-        const interval = setInterval(loadFireData, 60000); // 1분마다 주기적 갱신
-        return () => clearInterval(interval);
+        const es = connectSse(
+            (initialFireMarkers, initialDisasterMarkers) => {
+                setFireMarkers(initialFireMarkers);
+                setDisasterAlertMarkers(initialDisasterMarkers);
+            },
+            (newMarker) => {
+                setFireMarkers((prev) => prependUnique(prev, newMarker));
+            },
+            (newMarker) => {
+                setDisasterAlertMarkers((prev) => prependUnique(prev, newMarker));
+            },
+        );
+
+        return () => es.close();
     }, []);
 
     //FireMarkers 필터링
     const filteredFireMarkers = useMemo(() => {
         return fireMarkers.filter(fire => getFireStage(fire.createdAt) !== 'deleted');
     }, [fireMarkers]);
+
+    const filteredDisasterAlertMarkers = useMemo(() => {
+        return disasterAlertMarkers.filter(alert => getFireStage(alert.createdAt) !== 'deleted');
+    }, [disasterAlertMarkers]);
 
     const { 
         activeCategory, 
@@ -175,22 +189,25 @@ export default function DashboardPage() {
     const infoPanelProps = {
         activeCategory,
         disasters,
-        weatherAlerts,
+        weatherAlerts: weatherAlerts,
         fireStations,
         safetyFacilities,
         reportMarkers,
         userLocation,
         fireMarkers: filteredFireMarkers,
-        setSelectedItem
+        disasterAlertMarkers: filteredDisasterAlertMarkers,
+        setSelectedItem,
+        selectedItem
     };
 
     const { 
         itemType,
         fireStats, 
-        comments,
-        setComments,
         sortedItems,
+        sortedFireDisasterItems,
+        sortedWeatherDisasterItems,
         handleSelectItem: originalHandleSelectItem,
+        news
     } = useInfoPanel(infoPanelProps);
 
     const handleItemFocus = async (item: any, type: any) => {
@@ -210,18 +227,62 @@ export default function DashboardPage() {
     
     // --- [동작: 사용자 브라우저 기반 현재 GPS 위치 트래킹] ---
     useEffect(() => {
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
-                (pos) => {
-                    setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-                },
-                (err) => {
-                    console.warn("사용자 현재 GPS 좌표를 가져올 수 없습니다. 기본 기동 좌표를 사용합니다.", err);
-                },
-                { enableHighAccuracy: true, timeout: 5000 }
-            );
-        }
+        if (!navigator.geolocation) return;
+
+        navigator.geolocation.getCurrentPosition(
+            (pos) => {
+                setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+            },
+            (err) => {
+                console.warn("사용자 현재 GPS 좌표를 가져올 수 없습니다.", err);
+            },
+            { enableHighAccuracy: true, timeout: 10_000, maximumAge: 0 },
+        );
     }, []);
+
+    // --- [동작: GPS 위치 확인되면 지도 중심을 사용자 위치로 이동] ---
+    const hasCenteredOnUser = useRef(false);
+    useEffect(() => {
+        if (!userLocation || hasCenteredOnUser.current || !mapRef.current) return;
+        mapRef.current.moveToLocation(userLocation.lat, userLocation.lng);
+        hasCenteredOnUser.current = true;
+    }, [userLocation]);
+
+    // 기상 재난문자 호출
+    useEffect(() => {
+        if (!userLocation) return;
+
+        const loadWeatherAlerts = async () => {
+            try {
+                console.log("기상 재난문자 호출")
+                const response = await getWeatherAlertsByLocation(
+                    userLocation.lat,
+                    userLocation.lng,
+                );
+                if (response) {
+                    // 데이터가 정상적으로 왔을때
+                    setRegionInfo(response.region);
+                    setWeatherAlerts(response.alerts ?? []); 
+                } else {
+                    // 응답이 비어있을 때 초기화
+                    setRegionInfo(null);
+                    setWeatherAlerts([]);
+                }
+                } catch (err) {
+                    console.error("기상 재난문자 조회 실패:", err);
+                    // 에러 발생 시 초기화
+                    setRegionInfo(null);
+                    setWeatherAlerts([]);
+                }
+        };
+
+        loadWeatherAlerts();
+        // 1분마다 주기적으로 API를 재호출하는 인터벌 구동 
+        const interval = setInterval(loadWeatherAlerts, 60000); 
+
+        //유저 위치가 바뀌거나 페이지를 나갈 때 기존 인터벌을 깔끔하게 초기화
+        return () => clearInterval(interval);
+    }, [userLocation?.lat, userLocation?.lng]); //userLocation에서 변경, 좌표 숫자가 같더라도 객체 참조값이 바뀌어 호출되는 문제 해결
 
     useEffect(() => {
         const savedUser = localStorage.getItem('user');
@@ -244,17 +305,11 @@ export default function DashboardPage() {
 
         Promise.all([
             getDisasterMessages(),
-            getWeatherAlerts(),
             getFireStations(),
-            getSidebarComments(),
-            fetchFireMarkers() 
         ])
-        .then(([d, w, f, c, fireM]) => {
+        .then(([d, f]) => {
             setDisasters(d);
-            setWeatherAlerts(w);
             setFireStations(f);
-            setComments(c);
-            setFireMarkers(fireM);
         })
         .catch((err) => {
             console.error("대시보드 통합 초기 데이터 갱신 중 크래시 발생:", err);
@@ -287,27 +342,28 @@ export default function DashboardPage() {
                 />
 
                 <CitizenFeed 
-                    comments={comments}
-                    setComments={setComments}   
+                    activeCategory={activeCategory}
                     currentUserId={currentUserId ?? 0}
-                    selectedItem={selectedItem}
-                    itemType={itemType}         
+                    isLoggedIn={isLoggedIn}
+                    onLoginRequired={() => setIsLoginModalOpen(true)}
                 />
             </aside>
-
             {/* --- 우측 가시화 공간 공간 (지도 + 상세 인포 판넬) --- */}
             <div className="flex-1 flex flex-col gap-6 h-full">
                 <section className="flex-1 bg-white rounded-[40px] shadow-xl overflow-hidden relative border-4 border-white">
                     <KakaoMap 
                         ref={mapRef}
-                        center={position} 
+                        center={position}
+                        userLocation={userLocation}
                         activeCategory={activeCategory} 
                         disasterData={disasters} 
-                        weatherAlerts={weatherAlerts} 
+                        RegionInfo={regionInfo} //기상 재난문자 역지오코딩된 유저 주소값
+                        weatherAlerts={weatherAlerts} //기상 재난문자 배열
                         fireStations={fireStations} 
                         safetyFacilities={safetyFacilities}
                         reportMarkers={reportMarkers}
-                        fireMarkers={filteredFireMarkers} 
+                        fireMarkers={filteredFireMarkers}
+                        disasterAlertMarkers={filteredDisasterAlertMarkers}
                         onSelectItem={handleItemFocus} 
                         fetchLatestReports={fetchLatestReports}
                         fetchSafetyData={fetchSafetyData}
@@ -320,12 +376,15 @@ export default function DashboardPage() {
                     fireStats={fireStats}
                     activeCategory={activeCategory}
                     sortedItems={sortedItems}
+                    sortedFireDisasterItems={sortedFireDisasterItems}
+                    sortedWeatherDisasterItems={sortedWeatherDisasterItems}
                     userLocation={userLocation}
                     setSelectedItem={setSelectedItem}
                     handleSelectItem={handleItemFocus}
                     getDistance={getDistance}
                     setIsReportModalOpen={setIsReportModalOpen}
-                    fireMarkers={filteredFireMarkers} 
+                    fireMarkers={filteredFireMarkers}
+                    news={news}
                 />
             </div>
         
@@ -333,7 +392,7 @@ export default function DashboardPage() {
             
             {/* 1. 재난/사고별 정보공유창 제보 타임라인 리스트 모달 */}
             <ReportListModal
-                isOpen={isReportModalOpen} // 💡 [수정] 오타 교정 완료 (isReportOpen -> isReportModalOpen)
+                isOpen={isReportModalOpen} 
                 onClose={() => setIsReportModalOpen(false)}
                 setIsCreateModalOpen={setIsCreateModalOpen}
                 reportByMarkers={reportByMarkers}
@@ -343,6 +402,8 @@ export default function DashboardPage() {
                 selectedItem={selectedItem}
                 itemType={itemType as any} 
                 onSuccess={fetchLatestReports}
+                setIsLoginModalOpen={setIsLoginModalOpen}
+                userName={userName}
             />
 
             {/* 2. 일반 지도 제보 마커 등록 모달 */}
@@ -372,9 +433,7 @@ export default function DashboardPage() {
                     userId={currentUserId}
                     onClose={() => setIsProfileModalOpen(false)}
                     reportMarkers={reportMarkers}
-                    sidebarComments={comments}
                     reportByMarkers={reportByMarkers}
-                    setSidebarComments={setComments}
                     onSuccess={fetchLatestReports}
                 />
             )}

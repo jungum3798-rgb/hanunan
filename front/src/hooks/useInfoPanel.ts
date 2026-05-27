@@ -1,12 +1,15 @@
 // 하단 패널 관련 함수 로직 - 백엔드 파이프라인 최적화 완료본
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { getDistance, sortItemsByDistance } from "@/utils/mapUtils";
 import { 
     getFireStationStats, 
-    getSidebarComments, 
     FireMarker,
-    Report 
+    DisasterAlertMarker,
+    Report,
+    NewsArticle,
+    getDisasterNews,
+    getDisasterAlertNews,
 } from '@/services/api';
 
 interface UseInfoPanelProps {
@@ -16,9 +19,11 @@ interface UseInfoPanelProps {
     fireStations: any[];
     safetyFacilities: any[];
     reportMarkers: Report[];
-    fireMarkers: FireMarker[]; 
+    fireMarkers: FireMarker[];
+    disasterAlertMarkers: DisasterAlertMarker[];
     userLocation: { lat: number, lng: number } | null;
     setSelectedItem: React.Dispatch<React.SetStateAction<any>>;
+    selectedItem: any;
 }
 
 export const useInfoPanel = ({
@@ -30,60 +35,111 @@ export const useInfoPanel = ({
     reportMarkers,
     userLocation,
     fireMarkers,
-    setSelectedItem
+    disasterAlertMarkers,
+    setSelectedItem,
+    selectedItem
 }: UseInfoPanelProps) => {
 
     const [itemType, setItemType] = useState<'DISASTER' | 'WEATHER' | 'FIRE' | 'SAFETY' | 'REPORT' | null>(null);
     const [fireStats, setFireStats] = useState<any>(null);
-    const [comments, setComments] = useState<any[]>([]);
     
-    //카테고리별 정렬 배열 
+    const filterWithin10Km = (items: any[]) => {
+        if (!userLocation) return items;
+
+        return items.filter(item => {
+            const lat = item.latitude ?? item.centerLatitude ?? item.pinLatitude ?? item.lat;
+            const lng = item.longitude ?? item.centerLongitude ?? item.pinLongitude ?? item.lng;
+
+            if (lat === undefined || lng === undefined) return false;
+
+            return getDistance(userLocation.lat, userLocation.lng, lat, lng) <= 10;
+        });
+    };
+
+    const sortedFireDisasterItems = useMemo(() => {
+        if (activeCategory !== 'DISASTER') return [];
+
+        const disasterItems = disasters.map(d => ({
+            ...d,
+            uniqueKey: `disaster-${d.id}`,
+            contentType: 'DISASTER',
+        }));
+
+        const realTimeFireItems = fireMarkers.map(f => ({
+            ...f,
+            uniqueKey: `rt-fire-${f.id}`,
+            contentType: 'DISASTER',
+            isFirePipeline: true,
+            msgCn: f.messageContent,
+            crtDt: f.createdAt,
+            locationName: f.parsedAddress || f.rcptnRgnNm,
+        }));
+
+        const realTimeDisasterItems = disasterAlertMarkers.map(d => ({
+            ...d,
+            uniqueKey: `rt-disaster-${d.id}`,
+            contentType: 'DISASTER',
+            isDisasterPipeline: true,
+            msgCn: d.messageContent,
+            crtDt: d.createdAt,
+            locationName: d.parsedAddress || d.rcptnRgnNm,
+        }));
+
+        const fireItems = fireStations.map(f => ({
+            ...f,
+            uniqueKey: `fire-${f.id}`,
+            contentType: 'FIRE',
+            name: f.frstCetrNm,
+            latitude: f.centerLatitude,
+            longitude: f.centerLongitude,
+        }));
+
+        const fireRelatedItems = [...disasterItems, ...realTimeFireItems, ...realTimeDisasterItems, ...fireItems];
+        return sortItemsByDistance(filterWithin10Km(fireRelatedItems), userLocation);
+    }, [activeCategory, disasters, fireStations, userLocation, fireMarkers, disasterAlertMarkers]);
+
+    const sortedWeatherDisasterItems = useMemo(() => {
+        if (activeCategory !== 'DISASTER') return [];
+
+        const weatherItems = weatherAlerts.map(w => ({
+            ...w,
+            uniqueKey: `weather-${w.id}`,
+            contentType: 'WEATHER',
+            isWeatherAlert: true,
+            category: w.dstSeNm,
+            alertType: w.alertLevel,
+            originalText: w.messageContent,
+            msgCn: w.messageContent,
+            locationName: w.rcptnRgnNm,
+        }));
+
+        return [...weatherItems].sort((a, b) => {
+            const dateA = new Date(a.createdAt || 0).getTime();
+            const dateB = new Date(b.createdAt || 0).getTime();
+            return dateB - dateA;
+        });
+    }, [activeCategory, weatherAlerts]);
+
+    //카테고리별 정렬 배열 (안전·제보 탭용)
     const sortedItems = useMemo(() => {
         let itemsToDisplay: any[] = [];
 
         if (activeCategory === 'DISASTER') {
-            // 일반 재난문자 매핑
-            const disasterItems = disasters.map(d => ({
-                ...d,
-                uniqueKey: `disaster-${d.id}`,
-                contentType: 'DISASTER' 
-            }));
-
-            // 백엔드 실시간 화재 마커 매핑
-            const realTimeFireItems = fireMarkers.map(f => ({
-                ...f,
-                uniqueKey: `rt-fire-${f.id}`,
-                contentType: 'DISASTER', // 재난 카테고리에 내포
-                isFirePipeline: true,    // 화재 데이터 판별용 플래그
-                // 리스트 및 요약 UI 호환을 위해 백엔드 필드명을 프론트 규격으로 단일화
-                msgCn: f.messageContent,
-                crtDt: f.createdAt,
-                locationName: f.parsedAddress || f.rcptnRgnNm
-            }));
-
-            const weatherItems = weatherAlerts.map(w => ({
-                ...w,
-                uniqueKey: `weather-${w.id}`,
-                contentType: 'WEATHER' 
-            }));
-
-            const fireItems = fireStations.map(f => ({
-                ...f,
-                uniqueKey: `fire-${f.id}`,
-                contentType: 'FIRE',
-                name: f.frstCetrNm,
-                latitude: f.centerLatitude,
-                longitude: f.centerLongitude
-            }));
-
-            itemsToDisplay = [...disasterItems, ...realTimeFireItems, ...weatherItems, ...fireItems];
+            return [];
         }
         else if (activeCategory === 'SAFETY') {
-            itemsToDisplay = safetyFacilities.map(s => ({ 
-                ...s, 
-                uniqueKey: `safety-${s.id}`,
-                contentType: 'SAFETY' // 데이터 속성 보장을 위한 명시
-            }));
+            const seen = new Set<string>();
+            itemsToDisplay = [];
+            for (const s of safetyFacilities) {
+                const dedupeKey = `${s.type}-${s.id}-${s.latitude}-${s.longitude}`;
+                if (seen.has(dedupeKey)) continue;
+                seen.add(dedupeKey);
+                itemsToDisplay.push({
+                    ...s,
+                    uniqueKey: `safety-${dedupeKey}`,
+                    contentType: 'SAFETY',
+                });
+            }
         }
         else if (activeCategory === 'REPORT') {
             itemsToDisplay = reportMarkers.map(report => ({ 
@@ -93,30 +149,15 @@ export const useInfoPanel = ({
             }));
         }
 
-        // 반경 10km 내 필터링 레이어
-        const filteredItems = userLocation
-            ? itemsToDisplay.filter(item => {
-                const lat = item.latitude ?? item.centerLatitude ?? item.pinLatitude ?? item.lat;
-                const lng = item.longitude ?? item.centerLongitude ?? item.pinLongitude ?? item.lng;
-                
-                if (lat === undefined || lng === undefined) return false;
-                
-                const dist = getDistance(userLocation.lat, userLocation.lng, lat, lng);
-                
-                return dist <= 10;
-            })
-            : itemsToDisplay;
+        return sortItemsByDistance(filterWithin10Km(itemsToDisplay), userLocation);
 
-        return sortItemsByDistance(filteredItems, userLocation);
-
-    }, [activeCategory, disasters, weatherAlerts, fireStations, safetyFacilities, reportMarkers, userLocation, fireMarkers]);
+    }, [activeCategory, safetyFacilities, reportMarkers, userLocation]);
     
     const handleSelectItem = async (item: any, type: 'DISASTER' | 'WEATHER' | 'FIRE' | 'SAFETY' | 'REPORT') => {
         if (!item) {
             setSelectedItem(null);
             setItemType(null);
             setFireStats(null);
-            setComments([]);
             return;
         }
         // 실시간 화재 데이터 및 일반 제보 데이터 식별값 유실 방지 보정 로직
@@ -130,6 +171,16 @@ export const useInfoPanel = ({
                 msgCn: item.messageContent || item.msgCn, 
                 parsedAddress: item.parsedAddress || item.locationName || item.rcptnRgnNm, 
                 aiSummary: item.aiSummary 
+            };
+        }
+
+        if (type === 'DISASTER' && (item.isDisasterPipeline || item.uniqueKey?.startsWith('rt-disaster'))) {
+            processedItem = {
+                ...item,
+                id: item.id,
+                isDisasterPipeline: true,
+                msgCn: item.messageContent || item.msgCn,
+                parsedAddress: item.parsedAddress || item.locationName || item.rcptnRgnNm,
             };
         }
 
@@ -191,24 +242,50 @@ export const useInfoPanel = ({
             }
         }
 
-        // 2. 해당 마커 하부에 연결된 사이드바 댓글 피드 로딩
-        try {
-            const filteredComments = await getSidebarComments(targetId, type);
-            setComments(Array.isArray(filteredComments) ? filteredComments : []);
-        } catch (e) { 
-            console.error("댓글 피드 조회 백엔드 통신 실패:", e);
-            setComments([]); 
-        }
-
     };
+
+    const [news, setNews] = useState<NewsArticle[]>([]); //화재 재난마커 뉴스들
+
+        //화재·기타 재난 마커 뉴스 호출
+        useEffect(() => {
+          const isFire = selectedItem?.isFirePipeline;
+          const isDisaster = selectedItem?.isDisasterPipeline;
+          if (!selectedItem?.id || itemType !== 'DISASTER' || (!isFire && !isDisaster)) {
+            setNews([]);
+            return;
+          }
+          let interval: NodeJS.Timeout;
+          const fetchNews = async () => {
+              if (news.length >= 10) {
+                  if (interval) clearInterval(interval);
+                  return;
+              }
+              try {
+                  const data = isFire
+                    ? await getDisasterNews(selectedItem.id)
+                    : await getDisasterAlertNews(selectedItem.id, selectedItem.disasterType);
+                  setNews(data);
+                  if (data.length >= 10) {
+                      if (interval) clearInterval(interval);
+                  }
+              } catch (e) {
+                  console.error("뉴스 폴링 실패:", e);
+              }
+          };
+          fetchNews();
+          interval = setInterval(fetchNews, 60000);
+          return () => clearInterval(interval);
+      }, [selectedItem?.id, selectedItem?.isFirePipeline, selectedItem?.isDisasterPipeline, selectedItem?.disasterType, itemType]);
+    
 
     return {
         setSelectedItem, 
         itemType,
         fireStats, 
-        comments,
-        setComments,
         sortedItems,
-        handleSelectItem
+        sortedFireDisasterItems,
+        sortedWeatherDisasterItems,
+        handleSelectItem,
+        news
     };
 };

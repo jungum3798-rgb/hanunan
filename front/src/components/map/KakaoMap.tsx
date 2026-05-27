@@ -2,8 +2,13 @@
 
 import { useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
 import Script from 'next/script';
-import { DisasterMessage, WeatherAlert, FireStation, SafetyFacility, FireMarker, Report } from '@/services/api';
-
+import { DisasterMessage, FireStation, SafetyFacility, FireMarker, DisasterAlertMarker, Report, Region, WeatherAlert } from '@/services/api';
+import { getDisasterTypeUi } from '@/utils/disasterUtils';
+import {
+} from '@/utils/weatherMapUtils';
+import { convertEPSG5186ToWGS84 } from '@/utils/weatherMapUtils';
+const southKoreaGeoJson: any = require('@/assets/geojson/korea_districts.json');
+import regionCodes from '@/assets/geojson/region_codes.json';
 const KAKAO_SDK_URL = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${process.env.NEXT_PUBLIC_KAKAO_MAP_KEY}&autoload=false&libraries=services,clusterer`;
 
 export interface KakaoMapHandle {
@@ -12,13 +17,16 @@ export interface KakaoMapHandle {
 
 interface KakaoMapProps {
   center: { lat: number; lng: number };
+  userLocation: { lat: number; lng: number } | null;
   activeCategory: "DISASTER" | "SAFETY" | "REPORT";
   disasterData: DisasterMessage[];
   weatherAlerts: WeatherAlert[];
+  RegionInfo: Region | null;
   fireStations: FireStation[];
   safetyFacilities: SafetyFacility[];
   reportMarkers: Report[];
   fireMarkers: FireMarker[];
+  disasterAlertMarkers: DisasterAlertMarker[];
   onSelectItem: (item: any, type: 'DISASTER' | 'WEATHER' | 'FIRE' | 'SAFETY' | 'REPORT') => void;
   fetchLatestReports: () => void;
   fetchSafetyData: (bounds: { swLat: number; swLng: number; neLat: number; neLng: number }) => void;
@@ -26,11 +34,12 @@ interface KakaoMapProps {
 
 const REPORT_TYPE: Record<string, { icon: string; label: string }> = {
   화재: { icon: '🔥', label: '화재' },
-  기상: { icon: '🌧️', label: '기상' }
+  기상: { icon: '🌧️', label: '기상' },
+  기타: { icon: '⚠️', label: '기타' },
 };
 
 const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>((props, ref) => {
-  const { center, activeCategory, disasterData, weatherAlerts, fireStations, safetyFacilities, reportMarkers, onSelectItem, fireMarkers, fetchLatestReports, fetchSafetyData } = props;
+  const { center, userLocation, activeCategory, disasterData, weatherAlerts, RegionInfo, fireStations, safetyFacilities, reportMarkers, onSelectItem, fireMarkers, disasterAlertMarkers, fetchLatestReports, fetchSafetyData } = props;
   
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<any>(null);
@@ -72,7 +81,8 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>((props, ref) => {
 
   // 안전시설 데이터 로드
   const triggerFetchSafetyData = () => {
-    if (!mapInstance.current) return;
+    console.log("지도 드래그 이벤트 발생! 현재 바운드:", mapInstance.current.getBounds());
+    if (activeCategory !== 'SAFETY' || !mapInstance.current) return;
     const bounds = mapInstance.current.getBounds();
     const swLatLng = bounds.getSouthWest();
     const neLatLng = bounds.getNorthEast();
@@ -114,7 +124,7 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>((props, ref) => {
       if (!mapRef.current) return;
       mapInstance.current = new kakao.maps.Map(mapRef.current, {
         center: new kakao.maps.LatLng(center.lat, center.lng),
-        level: 5
+        level: 6
       });
 
       const createClusterer = (color: string) => new kakao.maps.MarkerClusterer({
@@ -137,24 +147,7 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>((props, ref) => {
 
       handleMoveToCurrentLocation();
       kakao.maps.event.addListener(mapInstance.current, 'click', () => onSelectItem(null, activeCategory));
-      
-      //사용자가 드래그/확대하여 지도가 완전히 멈췄을 때 실시간 바운즈 안전시설 데이터 요청 연동
-      // kakao.maps.event.addListener(mapInstance.current, 'idle', () => {
-      //   if (!mapInstance.current) return;
-      //   const bounds = mapInstance.current.getBounds();
-      //   const swLatLng = bounds.getSouthWest();
-      //   const neLatLng = bounds.getNorthEast();
-
-      //   // 부모 컴포넌트(DashboardPage)가 공급해 준 API 호출 함수 실행 
-      //   fetchSafetyData({
-      //     swLat: swLatLng.getLat(),
-      //     swLng: swLatLng.getLng(),
-      //     neLat: neLatLng.getLat(),
-      //     neLng: neLatLng.getLng()
-      //   });
-      // });
-      // 사용자가 드래그/확대하여 지도가 완전히 멈췄을 때 작동
-      kakao.maps.event.addListener(mapInstance.current, 'idle', triggerFetchSafetyData);
+      //kakao.maps.event.addListener(mapInstance.current, 'idle', triggerFetchSafetyData);
       
       // 지도 생성 완료 직후, 최초 1회 강제로 주변 안전시설 데이터를 불러오기
       triggerFetchSafetyData();
@@ -229,22 +222,116 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>((props, ref) => {
         overlaysRef.current.push(overlay);
       });
 
-      weatherAlerts.forEach(alert => {
-        try {
-          const alertColor = alert.severity === 'HIGH' ? '#FF0000' : alert.severity === 'MID' ? '#FF9800' : '#FFD700';
-          const path = JSON.parse(alert.boundaryGeojson).coordinates[0].map((c: any) => new kakao.maps.LatLng(c[1], c[0]));
-          const poly = new kakao.maps.Polygon({
-            path, strokeWeight: 3, strokeColor: alertColor, fillColor: alertColor, fillOpacity: 0.15, clickable: true
-          });
-          kakao.maps.event.addListener(poly, 'click', () => {
-            kakao.maps.event.preventMap();
-            onSelectItem(alert, 'WEATHER');
-          });
-          poly.setMap(mapInstance.current);
-          polygonsRef.current.push(poly);
-        } catch (e) {}
+      disasterAlertMarkers.forEach(alert => {
+        const stage = getFireStage(alert.createdAt);
+        const { icon, color } = getDisasterTypeUi(alert.disasterType);
+        const pos = new kakao.maps.LatLng(alert.latitude, alert.longitude);
+        const isPulse = stage === 'active' ? 'fire-pulse' : '';
+        const bgColor = stage === 'active' ? color : stage === 'cooling' ? '#FF9800' : '#757575';
+
+        const content = document.createElement('div');
+        content.className = `fire-marker-container ${isPulse}`;
+        content.innerHTML = `
+          <div style="cursor:pointer; width:34px; height:34px; background:${bgColor}; border:3px solid white; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:16px; box-shadow:0 4px 12px rgba(0,0,0,0.4); transition: all 0.3s;">
+            ${icon}
+          </div>
+        `;
+
+        content.onclick = (e) => {
+          e.stopPropagation();
+          const processedAlert = {
+            ...alert,
+            isDisasterPipeline: true,
+            uniqueKey: `rt-disaster-${alert.id}`,
+            msgCn: alert.messageContent,
+            locationName: alert.parsedAddress || alert.rcptnRgnNm,
+            disasterStage: stage,
+          };
+          onSelectItem(processedAlert, 'DISASTER');
+        };
+
+        const overlay = new kakao.maps.CustomOverlay({ position: pos, content, yAnchor: 0.5, zIndex: 25 });
+        disasterMarkers.push(overlay);
+        overlaysRef.current.push(overlay);
       });
 
+      //기상 재난문자 폴리곤 
+      if (RegionInfo) {
+        const polygonColor = '#2fb533';
+
+        const matchedRegion = regionCodes.find((item: any) => {
+          return item.sido === RegionInfo.region1 && item.sgg === RegionInfo.region2;
+        });
+        const targetCode = matchedRegion ? matchedRegion.code : null;
+        
+        const targetFeature = southKoreaGeoJson.features.find((feature: any) => {
+          const props = feature.properties;
+          if (targetCode) {
+            return props.SIGUNGU_CD === targetCode;
+          }
+          return props.SIGUNGU_NM === RegionInfo.region2; 
+        });
+
+        console.log("Rendering Polygon for:", RegionInfo);
+        console.log("Target Feature:", targetFeature);
+
+        if (targetFeature && targetFeature.geometry) {
+        const geomType = targetFeature.geometry.type;
+        const rawCoords = targetFeature.geometry.coordinates;
+        const pathsToDraw: any[][] = [];
+
+        // 1. 타입에 따른 분기 처리 
+        if (geomType === 'Polygon') {
+          rawCoords.forEach((ring: any) => {
+            const path = ring.map((coord: any) => {
+              // 수정된 EPSG:5186 변환 함수 호출 (coord[0]=X, coord[1]=Y 순서 그대로 유지)
+              const wgs84 = convertEPSG5186ToWGS84(Number(coord[0]), Number(coord[1]));
+              return new kakao.maps.LatLng(wgs84.latitude, wgs84.longitude);
+            });
+            pathsToDraw.push(path);
+          });
+        } else if (geomType === 'MultiPolygon') {
+          rawCoords.forEach((polygon: any) => {
+            polygon.forEach((ring: any) => {
+              const path = ring.map((coord: any) => {
+                // 수정된 EPSG:5186 변환 함수 호출
+                const wgs84 = convertEPSG5186ToWGS84(Number(coord[0]), Number(coord[1]));
+                return new kakao.maps.LatLng(wgs84.latitude, wgs84.longitude);
+              });
+              pathsToDraw.push(path);
+            });
+          });
+        }
+
+        // 2. 카카오 지도에 폴리곤 그리기 및 영역 맞춰 화면 이동
+        if (pathsToDraw.length > 0) {
+          const bounds = new kakao.maps.LatLngBounds();
+
+          pathsToDraw.forEach((polygonPath) => {
+            if (polygonPath.length > 0) {
+              // 영역 확장을 위해 bounds에 좌표 추가
+              polygonPath.forEach(latlng => bounds.extend(latlng));
+
+              console.log("폴리곤 생성 성공! 첫 번째 위경도 좌표:", polygonPath[0].toString()); 
+              
+
+              const poly = new kakao.maps.Polygon({
+                path: polygonPath,
+                strokeWeight: 4,
+                strokeColor: '#2fb533', 
+                fillColor: '#2fb533',
+                fillOpacity: 0.2,
+                zIndex: 100,
+                clickable: false,
+              });
+              
+              poly.setMap(mapInstance.current);
+              polygonsRef.current.push(poly);
+            }
+          });
+        }
+      }
+      }
       fireStations.forEach(station => {
         try {
           const path = JSON.parse(station.boundaryGeojson).coordinates[0].map((c: any) => new kakao.maps.LatLng(c[1], c[0]));
@@ -311,6 +398,7 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>((props, ref) => {
       });
     }
 
+
     if (activeCategory === 'REPORT') {
       reportMarkers.forEach((report) => {
         
@@ -337,10 +425,11 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>((props, ref) => {
         
         const overlay = new kakao.maps.CustomOverlay({ position: pos, content, yAnchor: 1.2, zIndex: 30 });
 
-        addreportMarkers.push(overlay);//-
+        addreportMarkers.push(overlay);
         overlaysRef.current.push(overlay);
       });
     }
+
 
     // 4. 각 클러스터러에 유효 마커 주입
     disasterClusterer.current?.addMarkers(disasterMarkers);
@@ -351,19 +440,36 @@ const KakaoMap = forwardRef<KakaoMapHandle, KakaoMapProps>((props, ref) => {
     reportClusterer.current?.addMarkers(addreportMarkers);
   };
 
+  
+  useEffect(() => {
+   
+    if (activeCategory === 'SAFETY' && mapInstance.current) {
+      triggerFetchSafetyData();
+    }
+  }, [activeCategory]);
+
+  
   useEffect(() => {
     if (activeCategory === 'REPORT') {
       fetchLatestReports();
     }
-    //  탭 카테고리가 'SAFETY'로 전환될 때 현재 지도 좌표 기준의 데이터를 강제로 1회 당겨오기
-    if (activeCategory === 'SAFETY' && mapInstance.current) {
-      triggerFetchSafetyData();
-    }
-  }, [activeCategory, fetchLatestReports]);
+  }, [activeCategory]);
 
   useEffect(() => {
     if (mapInstance.current) renderItems();
-  }, [disasterData, weatherAlerts, fireStations, safetyFacilities, reportMarkers, fireMarkers, activeCategory]);
+  }, [disasterData, weatherAlerts, fireStations, safetyFacilities, reportMarkers, fireMarkers, disasterAlertMarkers, activeCategory, userLocation, RegionInfo]);
+
+  useEffect(() => {
+  if (mapInstance.current) {
+    const { kakao } = window as any;
+    
+    // 혹시 모를 중복 등록 방지를 위해 기존 리스너 삭제 후 추가
+    kakao.maps.event.removeListener(mapInstance.current, 'idle', triggerFetchSafetyData);
+    kakao.maps.event.addListener(mapInstance.current, 'idle', triggerFetchSafetyData);
+    
+    console.log("지도 idle 이벤트 리스너 등록 완료");
+  }
+}, [mapInstance.current])
 
   return (
     <div className="relative w-full h-full">

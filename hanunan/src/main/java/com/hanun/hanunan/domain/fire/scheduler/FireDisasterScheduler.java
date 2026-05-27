@@ -1,7 +1,7 @@
 package com.hanun.hanunan.domain.fire.scheduler;
 
 import com.hanun.hanunan.domain.disaster.service.DisasterAlertService;
-import com.hanun.hanunan.domain.fire.dto.DisasterApiItem;
+import com.hanun.hanunan.global.client.dto.DisasterApiItem;
 import com.hanun.hanunan.domain.fire.service.FireDisasterService;
 import com.hanun.hanunan.domain.weather.service.WeatherDisasterService;
 import com.hanun.hanunan.global.client.DisasterApiClient;

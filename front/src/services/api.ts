@@ -1,12 +1,8 @@
 
 import axios from 'axios';
 
-//----------- 카카오 맵 API 타입을 위한 선언 (에러 방지)----------------
-declare global {
-  interface Window {
-    kakao: any;
-  }
-}
+
+
 
 //--------------재난문자 모킹-------------------
 export interface DisasterMessage {
@@ -104,51 +100,6 @@ export const getSafetyFacilities = async (params: GetSafetyFacilitiesParams): Pr
   return response.data;
 };
 
-//----------------기상특보 모킹--------------------
-export interface WeatherAlert {
-  id: number;
-  alertId: string;
-  regionName: string;
-  latitude: number;
-  longitude: number;
-  boundaryGeojson: string;
-  alertType: string;
-  severity: 'LOW' | 'MID' | 'HIGH';
-  startAt: string;
-  endAt: string | null;
-  originalText?: string; // 상세창 표시용 추가
-  aiSummary?: string;    // 상세창 표시용 추가
-}
-
-export const mockWeatherAlerts: WeatherAlert[] = [
-  {
-    id: 1,
-    alertId: "KMA_20260403_001",
-    regionName: "광주광역시 동구",
-    latitude: 35.143,
-    longitude: 126.924,
-    boundaryGeojson: JSON.stringify({
-      type: "Polygon",
-      coordinates: [[
-        [126.920, 35.140], [126.930, 35.140],
-        [126.930, 35.148], [126.920, 35.148],
-        [126.920, 35.140]
-      ]]
-    }),
-    alertType: "강풍주의보",
-    severity: "MID",
-    startAt: "2026-04-03T10:00:00",
-    endAt: null,
-    originalText: "[기상특보] 광주지역 강풍주의보 발효 중. 시설물 관리 유의.",
-    aiSummary: "광주 동구 지역에 강한 바람이 예상됩니다. 간판 및 시설물 고정에 유의하세요."
-  }
-];
-
-export const getWeatherAlerts = async (): Promise<WeatherAlert[]> => {
-  return new Promise((resolve) => {
-    setTimeout(() => resolve(mockWeatherAlerts), 300);
-  });
-};
 
 
 //-------------소방서------------------
@@ -209,11 +160,7 @@ export const getFireStationStats = async (id: number): Promise<FireDailyStat> =>
   return new Promise((resolve) => setTimeout(() => resolve(MOCK_FIRE_STATS[id]), 200));
 };
 
-
-
-
-//---------------제보 api--------------
-
+//----------api 정의---------------
 const api = axios.create({
   baseURL: `${process.env.NEXT_PUBLIC_API_URL}`, 
 });
@@ -230,6 +177,77 @@ api.interceptors.request.use((config) => {
   return Promise.reject(error);
 });
 
+let isAuthAlertShowing = false;
+
+api.interceptors.response.use(
+  (response) => {
+    // 200번대 정상 응답은 그대로 리턴
+    return response;
+  },
+  (error) => {
+    // 백엔드 SecurityConfig의 EntryPoint가 뱉은 401 + TOKEN_EXPIRED 조건 검증
+    if (error.response?.status === 401) {
+      if (isAuthAlertShowing) {
+        return new Promise(() => {}); // 뒤쪽 에러들이 컴포넌트를 터트리지 않게 대기 상태로 고립
+      }
+
+      // 🚩 첫 번째 401 에러 진입 시 플래그를 true로 잠금!
+      isAuthAlertShowing = true;
+
+      alert("인증 세션이 만료되어 로그아웃되었습니다. 다시 로그인해 주세요.");
+        
+        // 인증 관련 토큰 및 유저 정보 속성을 로컬 스토리지에서 완벽히 제거
+        localStorage.removeItem('token');
+        localStorage.removeItem('user'); // 유저 정보가 들어있는 key도 함께 청소
+        
+        // 강제 페이지 이동 대신, 현재 화면을 새로고침하여 '비로그인 UI'로 전환
+        window.location.reload();
+      
+      // 더 이상 뒤쪽 컴포넌트 코드가 실행되지 않도록 여기서 요청 중단
+      return new Promise(() => {}); 
+    }
+    // 401 외의 일반 에러(400, 500 등)들은 호출한 컴포넌트의 catch문으로 그대로 던짐
+    return Promise.reject(error);
+  }
+);
+
+
+//----------------기상 재난문자--------------------
+export interface WeatherAlert {
+  id: number;
+  sn: string;
+  messageContent: string;
+  rcptnRgnNm: string;
+  dstSeNm: string;
+  alertLevel: string;
+  createdAt: string;
+}
+export interface Region {
+  region1: string; // 시/도   
+  region2: string; // 시/군/구 
+  region3: string; // 읍/면/동 
+}
+export interface WeatherAlertsResponse {
+  region: Region;
+  alerts: WeatherAlert[];
+}
+
+export async function getWeatherAlertsByLocation(
+  lat: number,
+  lng: number
+): Promise<WeatherAlertsResponse | null> {
+  try {
+    const response = await api.get<WeatherAlertsResponse>(
+      '/api/weather/alerts',
+      { params: { lat, lng } }
+    );
+    return response.data;
+  } catch (error) {
+    return null;
+  }
+}
+
+//---------------제보 api--------------
 export interface Report {
   id: number;
   userId: number;
@@ -338,101 +356,53 @@ export const flagReport = async (reportId: number): Promise<ReportResponse> => {
 };
 
 export const getMyLikedReports = async (): Promise<Report[]> => {
+  if (typeof window !== 'undefined' && !localStorage.getItem('token')) {
+    return []; 
+  }
+
   const response = await api.get<Report[]>('/api/reports/liked');
   return response.data;
 };
 
-//----------------------댓글피드------------
-export interface ReportComment {
-  id: number;
-  reportId: number;
-  userId: number;
-  nickname: string;
-  content: string;
-  imageUrl?: string | null;
-  createdAt: string;
-  targetId: number;
-  targetType: 'DISASTER' | 'WEATHER' | 'FIRE' | 'SAFETY' | 'REPORT';
+//----------------------댓글 피드 (Citizen Feed)------------
+export type FeedCommentType = 'DISASTER' | 'SAFETY' | 'REPORT';
+
+export interface FeedComment {
+  id: number;
+  type: FeedCommentType;
+  content: string;
+  userId: number;
+  userName: string | null;
+  createdAt: string;
 }
 
+/** @deprecated FeedComment 사용 */
+export type ReportComment = FeedComment;
 
-let MOCK_SIDEBAR_COMMENTS: ReportComment[] = [
-  {
-    id: 1,
-    reportId: 0,
-    userId: 42,
-    nickname: "지나가던시민",
-    content: "연기가 너무 심해요. 다들 조심하세요.",
-    imageUrl: null,
-    createdAt: "2026-04-04T20:20:00",
-    targetId: 2,
-    targetType: 'DISASTER'
-  },
-  {
-    id: 2,
-    reportId: 0,
-    userId: 10,
-    nickname: "홍길동",
-    content: "현재 소방차 도착해서 진압 중입니다!",
-    imageUrl: null,
-    createdAt: "2026-04-04T20:15:00",
-    targetId: 2,
-    targetType: 'DISASTER'
-  }
-];
-
-export const getSidebarComments = async (targetId?: number, targetType?: string): Promise<ReportComment[]> => {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      if (targetId && targetType) {
-        const filtered = MOCK_SIDEBAR_COMMENTS.filter(
-          (c) => c.targetId === targetId && c.targetType === targetType
-        );
-        resolve(filtered);
-      } else {
-        resolve(MOCK_SIDEBAR_COMMENTS);
-      }
-    }, 300);
-  });
+export const getCommentsByType = async (type: FeedCommentType): Promise<FeedComment[]> => {
+  const response = await api.get<FeedComment[]>('/api/comments', { params: { type } });
+  return response.data;
 };
 
-export const createSidebarComment = async (
-  content: string,
-  userId: number,
-  targetId: number,
-  targetType: 'DISASTER' | 'WEATHER' | 'FIRE' | 'SAFETY' | 'REPORT'
-): Promise<ReportComment> => {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      const newComment: ReportComment = {
-        id: Date.now(),
-        reportId: 0,
-        userId: userId,
-        nickname: "사용자",
-        content: content,
-        imageUrl: null,
-        createdAt: new Date().toISOString(),
-        targetId: targetId,
-        targetType: targetType
-      };
-      MOCK_SIDEBAR_COMMENTS = [newComment, ...MOCK_SIDEBAR_COMMENTS];
-      resolve(newComment);
-    }, 200);
-  });
+export const getAllComments = async (): Promise<FeedComment[]> => {
+  const types: FeedCommentType[] = ['DISASTER', 'SAFETY', 'REPORT'];
+  const results = await Promise.all(types.map(getCommentsByType));
+  return results
+    .flat()
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 };
 
-export const deleteSidebarComment = async (commentId: number): Promise<boolean> => {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      MOCK_SIDEBAR_COMMENTS = MOCK_SIDEBAR_COMMENTS.filter((c) => c.id !== commentId);
-      resolve(true);
-    }, 200);
-  });
+export const createComment = async (type: FeedCommentType, content: string): Promise<FeedComment> => {
+  const response = await api.post<FeedComment>('/api/comments', { type, content });
+  return response.data;
 };
 
+export const deleteComment = async (commentId: number): Promise<void> => {
+  await api.delete(`/api/comments/${commentId}`);
+};
 
-
-
+export const getCommentAuthorName = (comment: FeedComment) =>
+  comment.userName?.trim() || `사용자${comment.userId}`;
 
 //-------------화재마커------------
 //0512
@@ -441,16 +411,48 @@ export interface FireMarker {
   sn: string;
   messageContent: string;
   rcptnRgnNm: string;
-  parsedAddress?: string | null;
+  parsedAddress: string;
   latitude: number;
   longitude: number;
   createdAt: string;
+  alertLevel?: string;
 }
-//0512
-export const fetchFireMarkers = async (): Promise<FireMarker[]> => {
-  const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/fire/markers`);
-  if (!response.ok) throw new Error('화재 마커를 불러오는데 실패했습니다.');
-  return response.json();
+
+//-------------재난 알림 마커 (테러·붕괴·폭발·산사태)------------
+export interface DisasterAlertMarker {
+  id: number;
+  sn: string;
+  messageContent: string;
+  rcptnRgnNm: string;
+  parsedAddress: string;
+  latitude: number;
+  longitude: number;
+  createdAt: string;
+  alertLevel: string;
+  disasterType: string;
+}
+
+export const connectSse = (
+  onInit: (fireMarkers: FireMarker[], disasterMarkers: DisasterAlertMarker[]) => void,
+  onFireMarker: (marker: FireMarker) => void,
+  onDisasterMarker: (marker: DisasterAlertMarker) => void,
+) => {
+  const es = new EventSource(`${process.env.NEXT_PUBLIC_API_URL}/api/sse/subscribe`);
+
+  es.addEventListener('init', (e) => {
+    const data = JSON.parse(e.data);
+    onInit(data.fireMarkers ?? [], data.disasterMarkers ?? []);
+  });
+
+  es.addEventListener('fire-marker', (e) => {
+    onFireMarker(JSON.parse(e.data));
+  });
+
+  es.addEventListener('disaster-marker', (e) => {
+    onDisasterMarker(JSON.parse(e.data));
+  });
+
+  return es;
 };
 
 export const testFireMarker = async (message: string, rcptnRgnNm?: string): Promise<FireMarker> => {
@@ -483,8 +485,40 @@ export const extractDisasterInfo = async (message: string): Promise<DisasterExtr
   return res.json();
 };
 
+//---------화재 마커 뉴스----------
+export interface NewsArticle {
+    title: string;
+    link: string;
+    naverLink: string;
+    description: string;
+    pubDate: string;
+}
 
+export async function getDisasterNews(disasterId: number): Promise<NewsArticle[]> {
+    try {
+        const response = await api.get<NewsArticle[]>(`/api/fire/${disasterId}/news`);
+        return response.data; // NewsArticleDto[] 배열 반환
+    } catch (error) {
+        console.error(`재난 ID ${disasterId}의 뉴스 조회 실패:`, error);
+        return []; // 에러 시 빈 배열 반환
+    }
+}
 
+export async function getDisasterAlertNews(
+  disasterId: number,
+  disasterType: string,
+): Promise<NewsArticle[]> {
+  try {
+    const response = await api.get<NewsArticle[]>(
+      `/api/disaster/${disasterId}/news`,
+      { params: { type: disasterType } },
+    );
+    return response.data;
+  } catch (error) {
+    console.error(`재난 알림 ID ${disasterId}(${disasterType}) 뉴스 조회 실패:`, error);
+    return [];
+  }
+}
 
 //----------로그인----------
 
@@ -505,3 +539,4 @@ export const kakaoLogin = async (code: string): Promise<LoginResponse> => {
   return response.data;
 };
 
+ 

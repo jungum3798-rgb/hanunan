@@ -1,8 +1,8 @@
 package com.hanun.hanunan.global.client;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.hanun.hanunan.domain.fire.dto.DisasterApiItem;
-import com.hanun.hanunan.domain.fire.dto.DisasterApiResponse;
+import com.hanun.hanunan.global.client.dto.DisasterApiItem;
+import com.hanun.hanunan.global.client.dto.DisasterApiResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;

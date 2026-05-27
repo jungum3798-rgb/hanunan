@@ -1,0 +1,132 @@
+{
+  "info": {
+    "name": "Hanunan API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "report_id",
+      "value": "1"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. 회원가입",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": { "raw": "{{base_url}}/member/create", "host": ["{{base_url}}"], "path": ["member", "create"] },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"test@test.com\",\n  \"password\": \"1234\",\n  \"name\": \"테스터\"\n}"
+        }
+      }
+    },
+    {
+      "name": "2. 로그인 (토큰 자동 저장)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.environment.set(\"token\", pm.response.json().token);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": { "raw": "{{base_url}}/member/doLogin", "host": ["{{base_url}}"], "path": ["member", "doLogin"] },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"test@test.com\",\n  \"password\": \"1234\"\n}"
+        }
+      }
+    },
+    {
+      "name": "3. 제보 생성",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.environment.set(\"report_id\", pm.response.json().id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": { "raw": "{{base_url}}/api/reports", "host": ["{{base_url}}"], "path": ["api", "reports"] },
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            { "key": "type", "value": "화재", "type": "text" },
+            { "key": "description", "value": "테스트 제보입니다.", "type": "text" },
+            { "key": "pinLatitude", "value": "37.5665", "type": "text" },
+            { "key": "pinLongitude", "value": "126.9780", "type": "text" },
+            { "key": "userLatitude", "value": "37.5665", "type": "text" },
+            { "key": "userLongitude", "value": "126.9780", "type": "text" },
+            { "key": "userAccuracyMeters", "value": "10", "type": "text" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "4. 전체 제보 조회",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{base_url}}/api/reports", "host": ["{{base_url}}"], "path": ["api", "reports"] }
+      }
+    },
+    {
+      "name": "5. 제보 수정 (본인만)",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": { "raw": "{{base_url}}/api/reports/{{report_id}}", "host": ["{{base_url}}"], "path": ["api", "reports", "{{report_id}}"] },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"type\": \"산불\",\n  \"description\": \"수정된 제보 내용입니다.\"\n}"
+        }
+      }
+    },
+    {
+      "name": "6. 좋아요 토글",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": { "raw": "{{base_url}}/api/reports/{{report_id}}/like", "host": ["{{base_url}}"], "path": ["api", "reports", "{{report_id}}", "like"] }
+      }
+    },
+    {
+      "name": "7. 신고",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": { "raw": "{{base_url}}/api/reports/{{report_id}}/flag", "host": ["{{base_url}}"], "path": ["api", "reports", "{{report_id}}", "flag"] }
+      }
+    },
+    {
+      "name": "8. 제보 삭제 (본인만)",
+      "request": {
+        "method": "DELETE",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": { "raw": "{{base_url}}/api/reports/{{report_id}}", "host": ["{{base_url}}"], "path": ["api", "reports", "{{report_id}}"] }
+      }
+    }
+  ]
+}

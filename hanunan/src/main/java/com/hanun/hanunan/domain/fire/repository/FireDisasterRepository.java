@@ -8,4 +8,5 @@ import java.util.List;
 public interface FireDisasterRepository extends JpaRepository<FireDisaster, Long> {
     boolean existsBySn(String sn);
     List<FireDisaster> findAllByOrderByCreatedAtDesc();
+    List<FireDisaster> findAllBySnStartingWith(String prefix);
 }

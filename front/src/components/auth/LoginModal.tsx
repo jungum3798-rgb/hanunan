@@ -46,7 +46,7 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 backdrop-blur-sm">
       <div className="bg-white w-[400px] rounded-[30px] p-12 shadow-2xl relative animate-fadeIn">
         
         {/* 닫기 버튼 */}

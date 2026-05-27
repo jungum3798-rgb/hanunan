@@ -49,6 +49,7 @@ const TopBar: React.FC<TopBarProps> = ({
                         <button
                             onClick={() => {
                                 localStorage.removeItem('user');
+                                localStorage.removeItem('token');
                                 window.location.reload();
                             }}
                             className="text-[10px] font-bold text-gray-400 hover:text-red-500 transition-colors ml-2 border-l pl-2 border-gray-200"

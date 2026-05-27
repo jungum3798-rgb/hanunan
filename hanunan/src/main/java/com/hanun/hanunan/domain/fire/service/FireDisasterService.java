@@ -245,6 +245,16 @@ public class FireDisasterService {
     }
 
     // ─────────────────────────────────────────
+    // 테스트용: TEST- 로 시작하는 화재 마커 전체 삭제
+    // ─────────────────────────────────────────
+    public int deleteTestMarkers() {
+        List<FireDisaster> testMarkers = fireDisasterRepository.findAllBySnStartingWith("TEST-");
+        fireDisasterRepository.deleteAll(testMarkers);
+        log.info("테스트 화재 마커 {}건 삭제 완료", testMarkers.size());
+        return testMarkers.size();
+    }
+
+    // ─────────────────────────────────────────
     // 테스트용: 임의 재난문자 직접 처리
     // ─────────────────────────────────────────
     public FireMarkerDto testProcessMessage(String messageContent, String rcptnRgnNm, String occurredAt) {
@@ -281,16 +291,21 @@ public class FireDisasterService {
         FireDisaster saved = fireDisasterRepository.save(fireDisaster);
         log.info("테스트 화재 마커 저장 완료 - SN: {}, 주소: {}", testSn, fullAddress);
 
-        // 뉴스 모니터링 시작
-        disasterNewsScheduleService.startMonitoring(saved.getId(), "화재", fullAddress, saved.getAlertLevel(), saved.getCreatedAt());
-
-        return new FireMarkerDto(
+        FireMarkerDto dto = new FireMarkerDto(
                 saved.getId(), saved.getSn(), saved.getMessageContent(),
                 saved.getRcptnRgnNm(), saved.getParsedAddress(),
                 saved.getLatitude(), saved.getLongitude(),
                 saved.getCreatedAt().toString(),
                 saved.getAlertLevel()
         );
+
+        // SSE로 연결된 프론트에 신규 화재 마커 실시간 전송
+        sseEmitterService.broadcastFire(dto);
+
+        // 뉴스 모니터링 시작
+        disasterNewsScheduleService.startMonitoring(saved.getId(), "화재", fullAddress, saved.getAlertLevel(), saved.getCreatedAt());
+
+        return dto;
     }
 
     // ─────────────────────────────────────────

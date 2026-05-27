@@ -222,16 +222,25 @@ public class DisasterNewsScheduleService {
             DateTimeFormatter.ofPattern("EEE, dd MMM yyyy HH:mm:ss Z", Locale.ENGLISH);
 
     /**
-     * 기사 발행일이 재난 발생 시각 이후인지 확인합니다.
+     * 기사 발행일이 수집 허용 범위 내인지 확인합니다.
+     *
+     * <p>재난문자는 실제 재난 발생 후 수분~수십분 뒤에 발송되는 경우가 많습니다.
+     * (예: 화재 17:50 발생 → 재난문자 18:12 발송)
+     * 이 경우 발생 시각 이전에 이미 보도된 기사가 누락될 수 있으므로,
+     * 재난 발생 시각 기준 30분 전까지 소급하여 수집합니다.</p>
+     *
      * pubDate 파싱 실패 시 안전하게 true 반환 (수집 허용)
      */
+    private static final long PRE_DISASTER_WINDOW_MIN = 30L; // 재난 발생 30분 전까지 소급 수집
+
     private boolean isPublishedAfterDisaster(String pubDate, LocalDateTime disasterOccurredAt) {
         if (pubDate == null || pubDate.isBlank() || disasterOccurredAt == null) return true;
         try {
             ZonedDateTime articleTime = ZonedDateTime.parse(pubDate.trim(), NAVER_DATE_FORMAT);
-            ZonedDateTime disasterTime = disasterOccurredAt.atZone(
-                    java.time.ZoneId.of("Asia/Seoul"));
-            return !articleTime.isBefore(disasterTime);
+            ZonedDateTime collectFrom = disasterOccurredAt
+                    .minusMinutes(PRE_DISASTER_WINDOW_MIN)
+                    .atZone(java.time.ZoneId.of("Asia/Seoul"));
+            return !articleTime.isBefore(collectFrom);
         } catch (Exception e) {
             log.warn("[뉴스 모니터링] pubDate 파싱 실패, 수집 허용 - pubDate: {}", pubDate);
             return true;

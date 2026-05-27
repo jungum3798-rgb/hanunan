@@ -16,6 +16,7 @@ interface ReportWriteModalProps {
 const REPORT_TYPES = [
   { label: '🔥 화재', value: '화재' },
   { label: '🌧️ 기상', value: '기상' },
+  { label: '⚠️ 기타', value: '기타' },
 ];
 
 const ReportWriteModal = ({

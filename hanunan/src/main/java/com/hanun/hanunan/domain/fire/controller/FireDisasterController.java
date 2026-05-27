@@ -24,6 +24,13 @@ public class FireDisasterController {
         return ResponseEntity.ok(fireDisasterService.getAllFireMarkers());
     }
 
+    // 테스트 화재 마커 전체 삭제 (sn이 TEST- 로 시작하는 것)
+    @DeleteMapping("/test")
+    public ResponseEntity<?> deleteTestMarkers() {
+        int count = fireDisasterService.deleteTestMarkers();
+        return ResponseEntity.ok(count + "건 삭제 완료");
+    }
+
     // 임의 재난문자로 전체 파이프라인 테스트
     // occurredAt: 재난 발생 시각 (선택, 형식: "2025-05-11T11:00:00"), 없으면 현재 시각
     @PostMapping("/test")

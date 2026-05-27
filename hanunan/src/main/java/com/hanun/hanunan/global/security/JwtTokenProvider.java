@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 
 import javax.crypto.spec.SecretKeySpec;
 import java.security.Key;
+import java.util.Base64;
 import java.util.Date;
 
 @Component
@@ -20,6 +21,19 @@ public class JwtTokenProvider {
         this.secretKey = secretKey;
         this.expiration = expiration;
         this.SECRET_KEY = new SecretKeySpec(java.util.Base64.getDecoder().decode(secretKey), SignatureAlgorithm.HS512.getJcaName());
+    }
+
+    public String getEmailFromToken(String token) {
+        Key signingKey = new SecretKeySpec(
+                Base64.getDecoder().decode(secretKey),
+                SignatureAlgorithm.HS512.getJcaName()
+        );
+        Claims claims = Jwts.parserBuilder()
+                .setSigningKey(signingKey)
+                .build()
+                .parseClaimsJws(token)
+                .getBody();
+        return claims.getSubject();
     }
 
     public String createToken(String email, String role){

@@ -21,6 +21,8 @@ interface ReportListModalProps {
   selectedItem: any;
   itemType: 'DISASTER' | 'WEATHER' | 'FIRE' | 'SAFETY' | 'REPORT' | null;
   onSuccess: () => void;
+  setIsLoginModalOpen: (open: boolean) => void;
+   userName: string | null;
 }
 
 const ReportListModal = ({
@@ -33,7 +35,9 @@ const ReportListModal = ({
   currentUserId,
   selectedItem,
   itemType,
-  onSuccess
+  onSuccess,
+  setIsLoginModalOpen,
+  userName
 }: ReportListModalProps) => {
   const [sortBy, setSortBy] = useState<'LATEST' | 'POPULAR'>('LATEST');
   const [editingReportId, setEditingReportId] = useState<number | null>(null);
@@ -43,17 +47,26 @@ const ReportListModal = ({
   //제보리스트를 열 떄 한번 더 동기화 실행
   const refreshReportsList = async () => {
     try {
-      const fetchedReports = await getReports();
-      setAllReports(fetchedReports);
-    } catch (err) {
-      console.error("타임라인 동기화 실패:", err);
+        const data = await getReports(); 
+        setAllReports(data); 
+    } catch (error) {
+        console.warn("레포트 목록 갱신 중 인증 에러 발생 (인터셉터 처리 대기):", error);
     }
   };
 
   const refreshMyLikedReports = async () => {
-    const data = await getMyLikedReports();
-    setMyLikedReports(data);
-  };
+    if (!localStorage.getItem('token')) {
+      setMyLikedReports([]);
+      return;
+    }
+
+    try{
+      const data = await getMyLikedReports();
+      setMyLikedReports(data);
+      }catch(err){
+        console.warn("내 좋아요 목록 조회 중 인증 에러 발생 (인터셉터 처리 대기):", err);
+      }
+    };
   
   useEffect(() => {
     onSuccess();
@@ -73,7 +86,7 @@ const ReportListModal = ({
 
   
   const handleDeletReportByMarkers= async (reportId: number) => {
-    if (!currentUserId) return alert("로그인 후 이용 가능합니다.");
+    if (!currentUserId) return 
 
     if (!window.confirm("이 현장 제보를 정말 삭제하시겠습니까?")) return;
     
@@ -89,7 +102,7 @@ const ReportListModal = ({
   };
 
   const handleLikeReportByMarkers = async (reportId: number, isResolved: boolean) => {
-    if (!currentUserId) return alert("로그인이 필요합니다.");
+    if (!currentUserId) return 
     if (isResolved) return; 
     
     try {
@@ -105,7 +118,7 @@ const ReportListModal = ({
   };
 
   const handleFlagReportByMarkers = async (reportId: number) => {
-    if (!currentUserId) return alert("로그인이 필요합니다.");
+    if (!currentUserId) return 
     if (!window.confirm("🚨 이 제보를 허위 제보로 신고하시겠습니까? 관리자 확인 후 처리됩니다.")) return;
     
     try {
@@ -160,7 +173,14 @@ const ReportListModal = ({
         <div className="flex justify-between items-center p-8 bg-white border-b border-gray-200 shadow-sm">
           <div className="flex items-center gap-4">
             <button 
-              onClick={() => setIsCreateModalOpen(true)} 
+              onClick={() => {
+                // userName 상태가 없거나, 로컬 스토리지에 토큰이 없으면 로그인 모달행!
+                if (!userName || !localStorage.getItem('token')) {
+                    setIsLoginModalOpen(true);
+                } else {
+                    setIsCreateModalOpen(true);
+                }
+            }}
               className="px-6 py-2.5 bg-[#3954AA] text-white font-black rounded-xl shadow-md hover:bg-[#2D438A] transition-all text-sm flex items-center gap-2"
             >
               <span className="text-lg">＋</span> 현장 제보 추가
@@ -232,7 +252,15 @@ const ReportListModal = ({
                       <div className="flex flex-col items-center mb-3">
                         <button
                           disabled={isResolved}
-                          onClick={() => handleLikeReportByMarkers(report.id, isResolved)}
+                          onClick={() => {
+                            if (!currentUserId || !localStorage.getItem('token')) {
+                              setIsLoginModalOpen(true);
+                              return;
+                            }
+                            // 로그인 상태면 원래 함수 실행
+                            handleLikeReportByMarkers(report.id, isResolved);
+                          }}
+
                           className={`w-11 h-11 flex items-center justify-center rounded-full border border-gray-100 shadow-sm transition-transform ${
                             isResolved ? 'bg-gray-200 opacity-50 cursor-not-allowed' : 'bg-gray-50 active:scale-125'
                           }`}
@@ -247,7 +275,14 @@ const ReportListModal = ({
                       </div>
 
                       {!isMyReport && !isResolved && (
-                        <button onClick={() => handleFlagReportByMarkers(report.id)} className="flex flex-col items-center group/report">
+                        <button onClick={() => {
+                        if (!currentUserId || !localStorage.getItem('token')) {
+                            setIsLoginModalOpen(true);
+                            return;
+                          }
+                          // 로그인 상태면 원래 함수 실행
+                          handleFlagReportByMarkers(report.id);
+                        }} className="flex flex-col items-center group/report">
                           <div className="w-9 h-9 flex items-center justify-center bg-gray-50 rounded-full border border-gray-100 shadow-sm group-hover/report:bg-red-50 transition-colors">
                             <span className="text-sm">🚨</span>
                           </div>
