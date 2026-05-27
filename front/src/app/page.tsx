@@ -240,14 +240,6 @@ export default function DashboardPage() {
         );
     }, []);
 
-    // --- [동작: GPS 위치 확인되면 지도 중심을 사용자 위치로 이동] ---
-    const hasCenteredOnUser = useRef(false);
-    useEffect(() => {
-        if (!userLocation || hasCenteredOnUser.current || !mapRef.current) return;
-        mapRef.current.moveToLocation(userLocation.lat, userLocation.lng);
-        hasCenteredOnUser.current = true;
-    }, [userLocation]);
-
     // 기상 재난문자 호출
     useEffect(() => {
         if (!userLocation) return;
