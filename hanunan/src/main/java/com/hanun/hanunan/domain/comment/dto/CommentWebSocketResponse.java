@@ -5,7 +5,7 @@ import com.hanun.hanunan.domain.comment.entity.Comment;
 import java.time.LocalDateTime;
 
 public record CommentWebSocketResponse(
-        String action,        // "CREATE" or "DELETE"
+        String action,
         Long id,
         String type,
         String content,
@@ -13,7 +13,6 @@ public record CommentWebSocketResponse(
         String userName,
         LocalDateTime createdAt
 ) {
-    // 댓글 작성 브로드캐스트
     public static CommentWebSocketResponse ofCreated(Comment comment) {
         return new CommentWebSocketResponse(
                 "CREATE",
@@ -26,16 +25,7 @@ public record CommentWebSocketResponse(
         );
     }
 
-    // 댓글 삭제 브로드캐스트
     public static CommentWebSocketResponse ofDeleted(Long id, String type) {
-        return new CommentWebSocketResponse(
-                "DELETE",
-                id,
-                type,
-                null,
-                null,
-                null,
-                null
-        );
+        return new CommentWebSocketResponse("DELETE", id, type, null, null, null, null);
     }
 }

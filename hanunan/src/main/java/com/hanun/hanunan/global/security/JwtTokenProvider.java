@@ -37,16 +37,14 @@ public class JwtTokenProvider {
     }
 
     public String createToken(String email, String role){
-//        claims는 jwt토큰의 payload부분을 의미
         Claims claims = Jwts.claims().setSubject(email);
         claims.put("role", role);
         Date now = new Date();
-        String token = Jwts.builder()
+        return Jwts.builder()
                 .setClaims(claims)
                 .setIssuedAt(now)
                 .setExpiration(new Date(now.getTime()+ expiration*60*1000L))
                 .signWith(SECRET_KEY)
                 .compact();
-        return token;
     }
 }

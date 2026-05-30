@@ -21,29 +21,17 @@ public class CommentWebSocketController {
     private final CommentService commentService;
     private final SimpMessagingTemplate messagingTemplate;
 
-    // 댓글 작성
-    // 클라이언트 → /app/comments.create
-    // 브로드캐스트 → /topic/comments/{type}
     @MessageMapping("/comments.create")
     public void create(@Payload CommentCreateRequest request, Principal principal) {
-        if (principal == null) {
-            throw new AccessDeniedException("로그인이 필요합니다.");
-        }
-
+        if (principal == null) throw new AccessDeniedException("로그인이 필요합니다.");
         Comment comment = commentService.create(principal.getName(), request);
         CommentWebSocketResponse response = CommentWebSocketResponse.ofCreated(comment);
         messagingTemplate.convertAndSend("/topic/comments/" + request.type(), response);
     }
 
-    // 댓글 삭제
-    // 클라이언트 → /app/comments.delete
-    // 브로드캐스트 → /topic/comments/{type}
     @MessageMapping("/comments.delete")
     public void delete(@Payload CommentDeleteRequest request, Principal principal) {
-        if (principal == null) {
-            throw new AccessDeniedException("로그인이 필요합니다.");
-        }
-
+        if (principal == null) throw new AccessDeniedException("로그인이 필요합니다.");
         String type = commentService.deleteAndGetType(principal.getName(), request.commentId());
         CommentWebSocketResponse response = CommentWebSocketResponse.ofDeleted(request.commentId(), type);
         messagingTemplate.convertAndSend("/topic/comments/" + type, response);

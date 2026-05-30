@@ -21,13 +21,11 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import java.util.List;
 
 @Configuration
-@EnableWebSecurity // Security 설정을 활성화함을 명시적으로 선언
-@RequiredArgsConstructor // final 필드에 대한 생성자를 자동으로 생성
+@EnableWebSecurity
+@RequiredArgsConstructor
 public class SecurityConfig {
 
     private final JwtTokenFilter jwtTokenFilter;
-    // OAuth2 성공 핸들러를 사용하실 예정이라면 주석을 해제하세요.
-    // private final GoogleOauth2LoginSuccess googleOauth2LoginSuccess;
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -37,19 +35,12 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         return http
-                // 1. CORS 설정
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-
-                // 2. CSRF 및 기본 인증 비활성화 (Stateless 구조이므로)
                 .csrf(AbstractHttpConfigurer::disable)
                 .httpBasic(AbstractHttpConfigurer::disable)
-                .formLogin(AbstractHttpConfigurer::disable) // 폼 로그인도 사용하지 않는다면 명시적으로 비활성화
-
-                // 3. 세션 관리: STATELESS 설정
+                .formLogin(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-
-                // 4. URL별 권한 제어
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.GET, "/api/reports/**", "/uploads/reports/**", "/api/comments/**").permitAll()
                         .requestMatchers(
@@ -63,12 +54,9 @@ public class SecurityConfig {
                                 "/api/safety/**",
                                 "/api/weather/**",
                                 "/api/test/**",
-                                "/api/sse/**",
                                 "/ws/**"
                         ).permitAll()
                         .anyRequest().authenticated())
-
-                // 5. 인증 실패 예외 처리 (토큰 없이 보호된 API 접근 시)
                 .exceptionHandling(exception -> exception
                         .authenticationEntryPoint((request, response, authException) -> {
                             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
@@ -76,30 +64,19 @@ public class SecurityConfig {
                             response.getWriter().write("{\"code\": \"UNAUTHORIZED\", \"message\": \"인증이 필요합니다.\"}");
                         })
                 )
-
-                // 6. JWT 필터 위치 설정
                 .addFilterBefore(jwtTokenFilter, UsernamePasswordAuthenticationFilter.class)
-
-                // 7. OAuth2 로그인 (필요 시 주석 해제)
-                /*
-                .oauth2Login(oauth2 -> oauth2
-                        .successHandler(googleOauth2LoginSuccess))
-                */
-
                 .build();
     }
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-
-        // 운영 단계에서는 실제 도메인을 넣는 것이 좋습니다.
         configuration.setAllowedOrigins(List.of("http://localhost:3000"));
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
-        configuration.setExposedHeaders(List.of("Authorization")); // 클라이언트에서 헤더를 읽을 수 있게 허용
+        configuration.setExposedHeaders(List.of("Authorization"));
         configuration.setAllowCredentials(true);
-        configuration.setMaxAge(3600L); // 프리플라이트(Preflight) 요청 캐싱 시간
+        configuration.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);

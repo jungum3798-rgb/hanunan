@@ -28,6 +28,7 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-web'
 	implementation 'org.springframework.boot:spring-boot-starter-websocket'
 	implementation 'org.springframework.boot:spring-boot-starter-security'
+	implementation 'org.springframework.boot:spring-boot-starter-websocket'
 	implementation 'me.paulschwarz:spring-dotenv:4.0.0' // .env 파일 자동 로드
 //	implementation 'org.springframework.boot:spring-boot-starter-security-oauth2-client'
 	implementation 'org.springframework.boot:spring-boot-starter-webflux'
@@ -48,10 +49,6 @@ dependencies {
 	implementation 'io.jsonwebtoken:jjwt-api:0.11.5'
 	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.11.5'
 	runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.11.5'
-//	implementation 'io.jsonwebtoken:jjwt-api:0.12.3'
-//	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.3'
-//	runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.3'
-
 }
 
 tasks.named('test') {
