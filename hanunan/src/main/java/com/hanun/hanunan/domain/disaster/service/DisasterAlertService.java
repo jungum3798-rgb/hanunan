@@ -12,7 +12,10 @@ import com.hanun.hanunan.domain.fire.service.GeocodingService;
 import com.hanun.hanunan.global.casualty.dto.CasualtyInfoDto;
 import com.hanun.hanunan.global.casualty.service.CasualtyExtractionService;
 import com.hanun.hanunan.global.news.dto.NewsArticleDto;
+import com.hanun.hanunan.global.news.dto.YoutubeVideoDto;
+import com.hanun.hanunan.global.news.entity.DisasterYoutubeVideo;
 import com.hanun.hanunan.global.news.repository.DisasterNewsArticleRepository;
+import com.hanun.hanunan.global.news.repository.DisasterYoutubeVideoRepository;
 import com.hanun.hanunan.global.news.service.DisasterNewsScheduleService;
 import com.hanun.hanunan.global.sse.SseEmitterService;
 import lombok.RequiredArgsConstructor;
@@ -45,6 +48,7 @@ public class DisasterAlertService {
 
     private final DisasterAlertRepository disasterAlertRepository;
     private final DisasterNewsArticleRepository disasterNewsArticleRepository;
+    private final DisasterYoutubeVideoRepository disasterYoutubeVideoRepository;
     private final DisasterNewsScheduleService disasterNewsScheduleService;
     private final CasualtyExtractionService casualtyExtractionService;
     private final SseEmitterService sseEmitterService;
@@ -225,6 +229,25 @@ public class DisasterAlertService {
                         .link(article.getLink())
                         .description(article.getDescription())
                         .pubDate(article.getPubDate())
+                        .build())
+                .collect(Collectors.toList());
+    }
+
+    public List<YoutubeVideoDto> getDisasterYoutubeVideos(Long disasterId, String disasterType) {
+        if (!disasterAlertRepository.existsById(disasterId)) {
+            throw new IllegalArgumentException("해당 재난 정보를 찾을 수 없습니다. id=" + disasterId);
+        }
+
+        return disasterYoutubeVideoRepository
+                .findTop10ByDisasterIdAndDisasterTypeOrderByFetchedAtDesc(disasterId, disasterType)
+                .stream()
+                .map(video -> YoutubeVideoDto.builder()
+                        .videoId(video.getVideoId())
+                        .url("https://www.youtube.com/watch?v=" + video.getVideoId())
+                        .title(video.getTitle())
+                        .channelTitle(video.getChannelTitle())
+                        .thumbnailUrl(video.getThumbnailUrl())
+                        .publishedAt(video.getPublishedAt())
                         .build())
                 .collect(Collectors.toList());
     }

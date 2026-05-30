@@ -1,0 +1,138 @@
+package com.hanun.hanunan.global.news.service;
+
+import com.hanun.hanunan.global.news.dto.YoutubeSearchResponse;
+import com.hanun.hanunan.global.news.dto.YoutubeVideoDto;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.*;
+import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.web.util.UriComponentsBuilder;
+
+import java.net.URI;
+import java.util.Collections;
+import java.util.List;
+import java.util.stream.Collectors;
+
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class YouTubeNewsService {
+
+    private static final String YOUTUBE_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search";
+    private static final String YOUTUBE_WATCH_URL  = "https://www.youtube.com/watch?v=";
+    private static final int    DISPLAY_COUNT       = 5;
+
+    @Value("${youtube.api.key}")
+    private String apiKey;
+
+    private final RestTemplate restTemplate;
+
+    /**
+     * 재난 유형 + 주소 기반으로 유튜브 최신 영상 최대 5건 반환
+     *
+     * @param disasterType  재난 유형 (예: "화재", "붕괴")
+     * @param parsedAddress 재난 발생 주소
+     */
+    public List<YoutubeVideoDto> fetchLatestVideos(String disasterType, String parsedAddress) {
+        try {
+            String searchQuery = buildSearchQuery(disasterType, parsedAddress);
+
+            URI uri = UriComponentsBuilder.fromHttpUrl(YOUTUBE_SEARCH_URL)
+                    .queryParam("part", "snippet")
+                    .queryParam("q", searchQuery)
+                    .queryParam("type", "video")
+                    .queryParam("order", "date")
+                    .queryParam("maxResults", DISPLAY_COUNT)
+                    .queryParam("relevanceLanguage", "ko")
+                    .queryParam("key", apiKey)
+                    .build()
+                    .encode()
+                    .toUri();
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setAccept(List.of(MediaType.APPLICATION_JSON));
+
+            ResponseEntity<YoutubeSearchResponse> response = restTemplate.exchange(
+                    uri, HttpMethod.GET, new HttpEntity<>(headers), YoutubeSearchResponse.class
+            );
+
+            YoutubeSearchResponse body = response.getBody();
+            if (body == null || body.getItems() == null || body.getItems().isEmpty()) {
+                log.warn("[YouTube] 검색 결과 없음 - 쿼리: {}", searchQuery);
+                return Collections.emptyList();
+            }
+
+            log.info("[YouTube] 검색 완료 - 쿼리: {}, 결과: {}건", searchQuery, body.getItems().size());
+
+            return body.getItems().stream()
+                    .filter(item -> item.getId() != null && item.getId().getVideoId() != null)
+                    .map(item -> {
+                        YoutubeSearchResponse.YoutubeSnippet snippet = item.getSnippet();
+                        String thumbnailUrl = resolveThumbnail(snippet);
+
+                        return YoutubeVideoDto.builder()
+                                .videoId(item.getId().getVideoId())
+                                .url(YOUTUBE_WATCH_URL + item.getId().getVideoId())
+                                .title(snippet != null ? snippet.getTitle() : "")
+                                .channelTitle(snippet != null ? snippet.getChannelTitle() : "")
+                                .thumbnailUrl(thumbnailUrl)
+                                .publishedAt(snippet != null ? snippet.getPublishedAt() : null)
+                                .build();
+                    })
+                    .collect(Collectors.toList());
+
+        } catch (Exception e) {
+            log.error("[YouTube] 검색 실패 - disasterType: {}, 오류: {}", disasterType, e.getMessage());
+            return Collections.emptyList();
+        }
+    }
+
+    // ─────────────────────────────────────────
+    // 검색 쿼리 생성: "{재난유형} {지역} 뉴스"
+    // 예) "화재 양주시 덕계동 뉴스"
+    // ─────────────────────────────────────────
+    private String buildSearchQuery(String disasterType, String parsedAddress) {
+        String regionKeyword = extractRegionKeyword(parsedAddress);
+        return disasterType + " " + regionKeyword + " 뉴스";
+    }
+
+    // ─────────────────────────────────────────
+    // 주소에서 핵심 지역 키워드 추출 (NaverNewsService와 동일 로직)
+    // 예) "경기도 양주시 덕계동 466-18 인근" → "양주시 덕계동"
+    // ─────────────────────────────────────────
+    private String extractRegionKeyword(String address) {
+        if (address == null || address.isBlank()) return "";
+
+        String[] tokens = address.split(" ");
+        StringBuilder keyword = new StringBuilder();
+        for (String token : tokens) {
+            if (token.matches(".*\\d+.*") || token.equals("인근") || token.equals("일대") || token.equals("부근")) {
+                break;
+            }
+            if (!keyword.isEmpty()) keyword.append(" ");
+            keyword.append(token);
+        }
+
+        String result = keyword.toString().trim();
+        String[] parts = result.split(" ");
+        if (parts.length > 2) {
+            result = parts[parts.length - 2] + " " + parts[parts.length - 1];
+        }
+        return result;
+    }
+
+    // medium 썸네일 우선, 없으면 default 사용
+    private String resolveThumbnail(YoutubeSearchResponse.YoutubeSnippet snippet) {
+        if (snippet == null || snippet.getThumbnails() == null) return null;
+        YoutubeSearchResponse.YoutubeThumbnails thumbnails = snippet.getThumbnails();
+        if (thumbnails.getMedium() != null && thumbnails.getMedium().getUrl() != null) {
+            return thumbnails.getMedium().getUrl();
+        }
+        if (thumbnails.getDefaultThumbnail() != null) {
+            return thumbnails.getDefaultThumbnail().getUrl();
+        }
+        return null;
+    }
+}

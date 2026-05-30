@@ -1,8 +1,11 @@
 package com.hanun.hanunan.global.news.service;
 
 import com.hanun.hanunan.global.news.dto.NewsArticleDto;
+import com.hanun.hanunan.global.news.dto.YoutubeVideoDto;
 import com.hanun.hanunan.global.news.entity.DisasterNewsArticle;
+import com.hanun.hanunan.global.news.entity.DisasterYoutubeVideo;
 import com.hanun.hanunan.global.news.repository.DisasterNewsArticleRepository;
+import com.hanun.hanunan.global.news.repository.DisasterYoutubeVideoRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.TaskScheduler;
@@ -58,9 +61,11 @@ public class DisasterNewsScheduleService {
     // key: "disasterType:disasterId" (예: "화재:3", "붕괴:7")
     private final ConcurrentHashMap<String, MonitoringState> activeMonitors = new ConcurrentHashMap<>();
 
-    private final TaskScheduler                  taskScheduler;
-    private final NaverNewsService               naverNewsService;
-    private final DisasterNewsArticleRepository  disasterNewsArticleRepository;
+    private final TaskScheduler                   taskScheduler;
+    private final NaverNewsService                naverNewsService;
+    private final YouTubeNewsService              youTubeNewsService;
+    private final DisasterNewsArticleRepository   disasterNewsArticleRepository;
+    private final DisasterYoutubeVideoRepository  disasterYoutubeVideoRepository;
 
     // ═══════════════════════════════════════════════════════════
     // Public API
@@ -141,7 +146,52 @@ public class DisasterNewsScheduleService {
         }
 
         state.callCount++;
+
+        // ── Phase2 이상: YouTube 영상 수집 ───────────────────
+        if (state.phase >= 2) {
+            collectYoutubeVideos(state);
+        }
+
         scheduleNext(state, key);
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // YouTube 영상 수집 (Phase2 이상)
+    // ═══════════════════════════════════════════════════════════
+
+    private void collectYoutubeVideos(MonitoringState state) {
+        List<YoutubeVideoDto> videos;
+        try {
+            videos = youTubeNewsService.fetchLatestVideos(state.disasterType, state.parsedAddress);
+        } catch (Exception e) {
+            log.error("[YouTube 수집] 실패 - disasterId={}, 오류={}", state.disasterId, e.getMessage());
+            return;
+        }
+
+        int savedCount = 0;
+        for (YoutubeVideoDto video : videos) {
+            if (video.getVideoId() == null || state.seenVideoIds.contains(video.getVideoId())) continue;
+
+            state.seenVideoIds.add(video.getVideoId());
+            disasterYoutubeVideoRepository.save(DisasterYoutubeVideo.builder()
+                    .disasterId(state.disasterId)
+                    .disasterType(state.disasterType)
+                    .videoId(video.getVideoId())
+                    .title(video.getTitle())
+                    .channelTitle(video.getChannelTitle())
+                    .thumbnailUrl(video.getThumbnailUrl())
+                    .publishedAt(video.getPublishedAt())
+                    .phase(state.phase)
+                    .fetchedAt(LocalDateTime.now())
+                    .build());
+            savedCount++;
+        }
+
+        if (savedCount > 0) {
+            log.info("[YouTube 수집] 신규 영상 {}건 저장 - disasterId={}", savedCount, state.disasterId);
+        } else {
+            log.info("[YouTube 수집] 신규 영상 없음 - disasterId={}", state.disasterId);
+        }
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -261,7 +311,8 @@ public class DisasterNewsScheduleService {
         int callCount        = 0;
         int consecutiveEmpty = 0;
 
-        final Set<String> seenLinks = ConcurrentHashMap.newKeySet();
+        final Set<String> seenLinks    = ConcurrentHashMap.newKeySet();
+        final Set<String> seenVideoIds = ConcurrentHashMap.newKeySet();
 
         MonitoringState(long disasterId, String disasterType, String parsedAddress,
                         String alertLevel, LocalDateTime disasterOccurredAt) {
