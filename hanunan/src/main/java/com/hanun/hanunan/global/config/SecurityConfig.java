@@ -54,7 +54,9 @@ public class SecurityConfig {
                                 "/api/safety/**",
                                 "/api/weather/**",
                                 "/api/test/**",
-                                "/ws/**"
+                                "/ws/**",
+                                "/*.html",
+                                "/static/**"
                         ).permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(exception -> exception
