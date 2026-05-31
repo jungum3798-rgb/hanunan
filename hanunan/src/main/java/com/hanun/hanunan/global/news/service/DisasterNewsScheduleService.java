@@ -64,6 +64,7 @@ public class DisasterNewsScheduleService {
     private final TaskScheduler                   taskScheduler;
     private final NaverNewsService                naverNewsService;
     private final YouTubeNewsService              youTubeNewsService;
+    private final YoutubeEligibilityService       youtubeEligibilityService;
     private final DisasterNewsArticleRepository   disasterNewsArticleRepository;
     private final DisasterYoutubeVideoRepository  disasterYoutubeVideoRepository;
 
@@ -74,18 +75,26 @@ public class DisasterNewsScheduleService {
     /**
      * 재난 발생 시 뉴스 모니터링을 시작합니다.
      *
-     * @param disasterId        재난 엔티티 PK
-     * @param disasterType      재난 유형 ("화재", "붕괴", "테러", "폭발", "홍수", "산사태")
-     * @param parsedAddress     재난 발생 주소
-     * @param alertLevel        긴급 단계 ("안전안내", "긴급재난", "위급재난")
+     * @param disasterId         재난 엔티티 PK
+     * @param disasterType       재난 유형 ("화재", "붕괴", "테러", "폭발", "홍수", "산사태")
+     * @param parsedAddress      재난 발생 주소
+     * @param alertLevel         긴급 단계 ("안전안내", "긴급재난", "위급재난")
      * @param disasterOccurredAt 재난 발생 시각 (이 시각 이후 발행된 기사만 수집)
+     * @param messageContent     재난문자 원문 (YouTube 수집 대상 여부 판단에 사용)
      */
     public void startMonitoring(Long disasterId, String disasterType, String parsedAddress,
-                                String alertLevel, LocalDateTime disasterOccurredAt) {
+                                String alertLevel, LocalDateTime disasterOccurredAt,
+                                String messageContent) {
+        // YouTube 수집 대상 여부: 긴급/위급 재난은 무조건, 안전안내는 Gemini로 판단
+        boolean youtubeEnabled = youtubeEligibilityService.shouldCollectYoutube(
+                alertLevel, disasterType, messageContent, parsedAddress);
+
         String key = monitorKey(disasterType, disasterId);
-        MonitoringState state = new MonitoringState(disasterId, disasterType, parsedAddress, alertLevel, disasterOccurredAt);
+        MonitoringState state = new MonitoringState(
+                disasterId, disasterType, parsedAddress, alertLevel, disasterOccurredAt, youtubeEnabled);
         activeMonitors.put(key, state);
-        log.info("[뉴스 모니터링 시작] key={}, 주소={}, 긴급단계={}, 발생시각={}", key, parsedAddress, alertLevel, disasterOccurredAt);
+        log.info("[뉴스 모니터링 시작] key={}, 주소={}, 긴급단계={}, YouTube수집={}, 발생시각={}",
+                key, parsedAddress, alertLevel, youtubeEnabled, disasterOccurredAt);
         scheduleCall(key, INITIAL_DELAY_SEC);
     }
 
@@ -147,8 +156,8 @@ public class DisasterNewsScheduleService {
 
         state.callCount++;
 
-        // ── Phase2 이상: YouTube 영상 수집 ───────────────────
-        if (state.phase >= 2) {
+        // ── Phase2 이상 + YouTube 수집 대상인 경우만 영상 수집 ──
+        if (state.phase >= 2 && state.youtubeEnabled) {
             collectYoutubeVideos(state);
         }
 
@@ -306,6 +315,7 @@ public class DisasterNewsScheduleService {
         final String        parsedAddress;
         final String        alertLevel;
         final LocalDateTime disasterOccurredAt; // 재난 발생 시각 (이후 기사만 수집)
+        final boolean       youtubeEnabled;     // YouTube 수집 대상 여부 (startMonitoring 시점 1회 판단)
 
         int phase            = 1;
         int callCount        = 0;
@@ -315,12 +325,13 @@ public class DisasterNewsScheduleService {
         final Set<String> seenVideoIds = ConcurrentHashMap.newKeySet();
 
         MonitoringState(long disasterId, String disasterType, String parsedAddress,
-                        String alertLevel, LocalDateTime disasterOccurredAt) {
+                        String alertLevel, LocalDateTime disasterOccurredAt, boolean youtubeEnabled) {
             this.disasterId         = disasterId;
             this.disasterType       = disasterType;
             this.parsedAddress      = parsedAddress;
             this.alertLevel         = alertLevel;
             this.disasterOccurredAt = disasterOccurredAt;
+            this.youtubeEnabled     = youtubeEnabled;
         }
     }
 }

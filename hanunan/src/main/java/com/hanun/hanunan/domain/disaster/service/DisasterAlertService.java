@@ -118,7 +118,8 @@ public class DisasterAlertService {
             ));
 
             // 뉴스 모니터링 시작 (T+10분 후 Phase1 첫 호출)
-            disasterNewsScheduleService.startMonitoring(saved.getId(), item.getDstSeNm(), fullAddress, item.getEmrgStepNm(), saved.getCreatedAt());
+            disasterNewsScheduleService.startMonitoring(saved.getId(), item.getDstSeNm(), fullAddress,
+                    item.getEmrgStepNm(), saved.getCreatedAt(), item.getMsgCn());
 
         } catch (Exception e) {
             log.error("재난 알림 항목 처리 실패 - SN: {}, 오류: {}", item.getSn(), e.getMessage());

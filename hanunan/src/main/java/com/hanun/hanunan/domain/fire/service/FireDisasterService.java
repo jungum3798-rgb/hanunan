@@ -126,7 +126,8 @@ public class FireDisasterService {
             ));
 
             // 뉴스 모니터링 시작 (T+10분 후 Phase1 첫 호출)
-            disasterNewsScheduleService.startMonitoring(saved.getId(), "화재", fullAddress, item.getEmrgStepNm(), saved.getCreatedAt());
+            disasterNewsScheduleService.startMonitoring(saved.getId(), "화재", fullAddress,
+                    item.getEmrgStepNm(), saved.getCreatedAt(), item.getMsgCn());
 
         } catch (Exception e) {
             log.error("화재 항목 처리 실패 - SN: {}, 오류: {}", item.getSn(), e.getMessage());
@@ -303,7 +304,8 @@ public class FireDisasterService {
         sseEmitterService.broadcastFire(dto);
 
         // 뉴스 모니터링 시작
-        disasterNewsScheduleService.startMonitoring(saved.getId(), "화재", fullAddress, saved.getAlertLevel(), saved.getCreatedAt());
+        disasterNewsScheduleService.startMonitoring(saved.getId(), "화재", fullAddress,
+                saved.getAlertLevel(), saved.getCreatedAt(), messageContent);
 
         return dto;
     }
