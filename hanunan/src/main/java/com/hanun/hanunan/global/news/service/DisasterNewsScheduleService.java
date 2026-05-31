@@ -171,7 +171,8 @@ public class DisasterNewsScheduleService {
     private void collectYoutubeVideos(MonitoringState state) {
         List<YoutubeVideoDto> videos;
         try {
-            videos = youTubeNewsService.fetchLatestVideos(state.disasterType, state.parsedAddress);
+            videos = youTubeNewsService.fetchLatestVideos(
+                    state.disasterType, state.parsedAddress, state.disasterOccurredAt);
         } catch (Exception e) {
             log.error("[YouTube 수집] 실패 - disasterId={}, 오류={}", state.disasterId, e.getMessage());
             return;
@@ -180,6 +181,7 @@ public class DisasterNewsScheduleService {
         int savedCount = 0;
         for (YoutubeVideoDto video : videos) {
             if (video.getVideoId() == null || state.seenVideoIds.contains(video.getVideoId())) continue;
+
 
             state.seenVideoIds.add(video.getVideoId());
             disasterYoutubeVideoRepository.save(DisasterYoutubeVideo.builder()

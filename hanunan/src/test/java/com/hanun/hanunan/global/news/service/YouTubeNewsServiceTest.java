@@ -15,6 +15,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.RestTemplate;
 
 import java.net.URI;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -30,6 +31,8 @@ class YouTubeNewsServiceTest {
 
     @Mock
     private RestTemplate restTemplate;
+
+    private static final LocalDateTime DISASTER_TIME = LocalDateTime.of(2025, 7, 21, 7, 0, 0);
 
     @BeforeEach
     void setUp() {
@@ -50,7 +53,8 @@ class YouTubeNewsServiceTest {
                 .thenReturn(ResponseEntity.ok(mockResponse));
 
         // when
-        List<YoutubeVideoDto> result = youTubeNewsService.fetchLatestVideos("화재", "경기도 양주시 덕계동 466-18 인근");
+        List<YoutubeVideoDto> result = youTubeNewsService.fetchLatestVideos(
+                "화재", "경기도 양주시 덕계동 466-18 인근", DISASTER_TIME);
 
         // then
         assertThat(result).hasSize(2);
@@ -73,7 +77,7 @@ class YouTubeNewsServiceTest {
                 .thenReturn(ResponseEntity.ok(buildMockResponse()));
 
         // when
-        youTubeNewsService.fetchLatestVideos("화재", "경기도 양주시 덕계동 466-18 인근");
+        youTubeNewsService.fetchLatestVideos("화재", "경기도 양주시 덕계동 466-18 인근", DISASTER_TIME);
 
         // then: URI에 쿼리 파라미터 포함 여부 확인
         ArgumentCaptor<URI> uriCaptor = ArgumentCaptor.forClass(URI.class);
@@ -88,6 +92,28 @@ class YouTubeNewsServiceTest {
     }
 
     @Test
+    @DisplayName("publishedAfter 파라미터가 재난 발생 30분 전 시각으로 설정됨")
+    void fetchLatestVideos_publishedAfter_시간필터_적용() {
+        // given
+        when(restTemplate.exchange(any(URI.class), eq(HttpMethod.GET), any(HttpEntity.class),
+                eq(YoutubeSearchResponse.class)))
+                .thenReturn(ResponseEntity.ok(buildMockResponse()));
+
+        // 재난 발생 시각: 2025-07-21 07:00 → publishedAfter는 06:30 이후여야 함
+        youTubeNewsService.fetchLatestVideos("화재", "양주시 덕계동", DISASTER_TIME);
+
+        // then: URI에 publishedAfter 포함, 값이 재난 30분 전 시각(06:30)을 담고 있어야 함
+        ArgumentCaptor<URI> uriCaptor = ArgumentCaptor.forClass(URI.class);
+        verify(restTemplate).exchange(uriCaptor.capture(), any(HttpMethod.class),
+                any(HttpEntity.class), eq(YoutubeSearchResponse.class));
+
+        String uriString = uriCaptor.getValue().toString();
+        assertThat(uriString).contains("publishedAfter=");
+        // 06:30 → URL 인코딩된 형태로 포함 여부 확인 (T06%3A30 또는 T06:30)
+        assertThat(uriString).containsAnyOf("T06%3A30", "T06:30");
+    }
+
+    @Test
     @DisplayName("주소에서 핵심 지역 키워드만 추출 — 번지수·인근 제거")
     void fetchLatestVideos_지역키워드_추출() {
         // given
@@ -96,7 +122,7 @@ class YouTubeNewsServiceTest {
                 .thenReturn(ResponseEntity.ok(buildMockResponse()));
 
         // when
-        youTubeNewsService.fetchLatestVideos("화재", "경기도 양주시 덕계동 466-18 인근");
+        youTubeNewsService.fetchLatestVideos("화재", "경기도 양주시 덕계동 466-18 인근", DISASTER_TIME);
 
         // then: URI에 핵심 지역('양주시', '덕계동')이 포함되고 번지수는 없어야 함
         ArgumentCaptor<URI> uriCaptor = ArgumentCaptor.forClass(URI.class);
@@ -122,7 +148,7 @@ class YouTubeNewsServiceTest {
                 .thenReturn(ResponseEntity.ok(null));
 
         // when
-        List<YoutubeVideoDto> result = youTubeNewsService.fetchLatestVideos("화재", "양주시 덕계동");
+        List<YoutubeVideoDto> result = youTubeNewsService.fetchLatestVideos("화재", "양주시 덕계동", DISASTER_TIME);
 
         // then
         assertThat(result).isEmpty();
@@ -139,7 +165,7 @@ class YouTubeNewsServiceTest {
                 .thenReturn(ResponseEntity.ok(emptyResponse));
 
         // when
-        List<YoutubeVideoDto> result = youTubeNewsService.fetchLatestVideos("화재", "양주시 덕계동");
+        List<YoutubeVideoDto> result = youTubeNewsService.fetchLatestVideos("화재", "양주시 덕계동", DISASTER_TIME);
 
         // then
         assertThat(result).isEmpty();
@@ -154,7 +180,7 @@ class YouTubeNewsServiceTest {
                 .thenThrow(new RuntimeException("API 호출 실패"));
 
         // when
-        List<YoutubeVideoDto> result = youTubeNewsService.fetchLatestVideos("화재", "양주시 덕계동");
+        List<YoutubeVideoDto> result = youTubeNewsService.fetchLatestVideos("화재", "양주시 덕계동", DISASTER_TIME);
 
         // then
         assertThat(result).isEmpty();
@@ -178,7 +204,7 @@ class YouTubeNewsServiceTest {
                 .thenReturn(ResponseEntity.ok(response));
 
         // when
-        List<YoutubeVideoDto> result = youTubeNewsService.fetchLatestVideos("화재", "양주시");
+        List<YoutubeVideoDto> result = youTubeNewsService.fetchLatestVideos("화재", "양주시", DISASTER_TIME);
 
         // then
         assertThat(result).hasSize(1);

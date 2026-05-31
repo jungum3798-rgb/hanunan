@@ -11,6 +11,10 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.net.URI;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -20,9 +24,10 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class YouTubeNewsService {
 
-    private static final String YOUTUBE_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search";
-    private static final String YOUTUBE_WATCH_URL  = "https://www.youtube.com/watch?v=";
-    private static final int    DISPLAY_COUNT       = 5;
+    private static final String YOUTUBE_SEARCH_URL       = "https://www.googleapis.com/youtube/v3/search";
+    private static final String YOUTUBE_WATCH_URL         = "https://www.youtube.com/watch?v=";
+    private static final int    DISPLAY_COUNT              = 5;
+    private static final long   PRE_DISASTER_WINDOW_MIN   = 30L; // 재난 발생 30분 전까지 소급 (네이버 뉴스와 동일)
 
     @Value("${youtube.api.key}")
     private String apiKey;
@@ -31,25 +36,34 @@ public class YouTubeNewsService {
 
     /**
      * 재난 유형 + 주소 기반으로 유튜브 최신 영상 최대 5건 반환
+     * 재난 발생 시각 기준 30분 전 이후 업로드된 영상만 수집합니다.
      *
-     * @param disasterType  재난 유형 (예: "화재", "붕괴")
-     * @param parsedAddress 재난 발생 주소
+     * @param disasterType       재난 유형 (예: "화재", "붕괴")
+     * @param parsedAddress      재난 발생 주소
+     * @param disasterOccurredAt 재난 발생 시각 (이 시각 30분 전 이후 영상만 수집)
      */
-    public List<YoutubeVideoDto> fetchLatestVideos(String disasterType, String parsedAddress) {
+    public List<YoutubeVideoDto> fetchLatestVideos(String disasterType, String parsedAddress,
+                                                    LocalDateTime disasterOccurredAt) {
         try {
             String searchQuery = buildSearchQuery(disasterType, parsedAddress);
 
-            URI uri = UriComponentsBuilder.fromHttpUrl(YOUTUBE_SEARCH_URL)
+            // 재난 발생 30분 전 시각을 YouTube API의 publishedAfter 형식(RFC 3339)으로 변환
+            String publishedAfter = toRfc3339(disasterOccurredAt.minusMinutes(PRE_DISASTER_WINDOW_MIN));
+
+            UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(YOUTUBE_SEARCH_URL)
                     .queryParam("part", "snippet")
                     .queryParam("q", searchQuery)
                     .queryParam("type", "video")
                     .queryParam("order", "date")
                     .queryParam("maxResults", DISPLAY_COUNT)
                     .queryParam("relevanceLanguage", "ko")
-                    .queryParam("key", apiKey)
-                    .build()
-                    .encode()
-                    .toUri();
+                    .queryParam("key", apiKey);
+
+            if (publishedAfter != null) {
+                builder.queryParam("publishedAfter", publishedAfter);
+            }
+
+            URI uri = builder.build().encode().toUri();
 
             HttpHeaders headers = new HttpHeaders();
             headers.setAccept(List.of(MediaType.APPLICATION_JSON));
@@ -64,7 +78,8 @@ public class YouTubeNewsService {
                 return Collections.emptyList();
             }
 
-            log.info("[YouTube] 검색 완료 - 쿼리: {}, 결과: {}건", searchQuery, body.getItems().size());
+            log.info("[YouTube] 검색 완료 - 쿼리: {}, publishedAfter: {}, 결과: {}건",
+                    searchQuery, publishedAfter, body.getItems().size());
 
             return body.getItems().stream()
                     .filter(item -> item.getId() != null && item.getId().getVideoId() != null)
@@ -121,6 +136,14 @@ public class YouTubeNewsService {
             result = parts[parts.length - 2] + " " + parts[parts.length - 1];
         }
         return result;
+    }
+
+    // LocalDateTime → RFC 3339 형식 변환 (YouTube API publishedAfter 파라미터 형식)
+    // 예) 2025-07-21T07:21:00+09:00
+    private String toRfc3339(LocalDateTime dateTime) {
+        if (dateTime == null) return null;
+        ZonedDateTime zoned = dateTime.atZone(ZoneId.of("Asia/Seoul"));
+        return zoned.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
     }
 
     // medium 썸네일 우선, 없으면 default 사용
