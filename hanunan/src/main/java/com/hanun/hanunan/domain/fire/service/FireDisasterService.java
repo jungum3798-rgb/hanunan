@@ -74,6 +74,10 @@ public class FireDisasterService {
         }
     }
 
+    // 동일 화재 판단 기준: 약 500m 이내(위경도 ±0.005°), 2시간 이내
+    private static final double SAME_FIRE_DEGREE_RADIUS = 0.005;
+    private static final long   SAME_FIRE_WINDOW_HOURS  = 2;
+
     // ─────────────────────────────────────────
     // 개별 화재 문자 처리
     // ─────────────────────────────────────────
@@ -102,7 +106,38 @@ public class FireDisasterService {
                 return;
             }
 
-            // 3. DB 저장
+            LocalDateTime occurredAt = parseCrtDt(item.getCrtDt());
+
+            // 3. 동일 화재 여부 확인 (약 500m 이내, 2시간 이내에 이미 등록된 화재)
+            Optional<FireDisaster> sameFireOpt = fireDisasterRepository
+                    .findFirstByLatitudeBetweenAndLongitudeBetweenAndCreatedAtAfterAndIsDuplicateFalseOrderByCreatedAtAsc(
+                            coords[0] - SAME_FIRE_DEGREE_RADIUS, coords[0] + SAME_FIRE_DEGREE_RADIUS,
+                            coords[1] - SAME_FIRE_DEGREE_RADIUS, coords[1] + SAME_FIRE_DEGREE_RADIUS,
+                            occurredAt.minusHours(SAME_FIRE_WINDOW_HOURS)
+                    );
+
+            if (sameFireOpt.isPresent()) {
+                // 동일 화재 후속 문자 → SN만 저장(중복 표시), 마커·모니터링 신규 생성 안 함
+                FireDisaster original = sameFireOpt.get();
+                fireDisasterRepository.save(FireDisaster.builder()
+                        .sn(item.getSn())
+                        .messageContent(item.getMsgCn())
+                        .rcptnRgnNm(item.getRcptnRgnNm())
+                        .alertLevel(item.getEmrgStepNm())
+                        .parsedAddress(fullAddress)
+                        .latitude(coords[0])
+                        .longitude(coords[1])
+                        .createdAt(occurredAt)
+                        .isDuplicate(true)
+                        .build());
+                log.info("동일 화재 후속 문자 수신 - 원본 ID={}, 후속 SN={}", original.getId(), item.getSn());
+
+                // 안전안내였어도 반복 문자이므로 YouTube 수집 활성화
+                disasterNewsScheduleService.enableYoutube(original.getId(), "화재");
+                return;
+            }
+
+            // 4. 신규 화재 → DB 저장
             FireDisaster fireDisaster = FireDisaster.builder()
                     .sn(item.getSn())
                     .messageContent(item.getMsgCn())
@@ -111,7 +146,7 @@ public class FireDisasterService {
                     .parsedAddress(fullAddress)
                     .latitude(coords[0])
                     .longitude(coords[1])
-                    .createdAt(parseCrtDt(item.getCrtDt()))
+                    .createdAt(occurredAt)
                     .build();
 
             FireDisaster saved = fireDisasterRepository.save(fireDisaster);
@@ -314,7 +349,7 @@ public class FireDisasterService {
     // 프론트엔드용 마커 목록 조회
     // ─────────────────────────────────────────
     public List<FireMarkerDto> getAllFireMarkers() {
-        return fireDisasterRepository.findAllByOrderByCreatedAtDesc().stream()
+        return fireDisasterRepository.findByIsDuplicateFalseOrderByCreatedAtDesc().stream()
                 .map(fire -> new FireMarkerDto(
                         fire.getId(),
                         fire.getSn(),

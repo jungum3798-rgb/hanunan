@@ -32,4 +32,10 @@ public class FireDisaster {
     private Double longitude;
 
     private LocalDateTime createdAt;
+
+    // 동일 화재에 대한 중복 재난문자 여부
+    // true: 이미 등록된 화재의 후속 문자 → 마커 미표시, 뉴스·유튜브 수집은 기존 화재에 귀속
+    @Column(nullable = false)
+    @Builder.Default
+    private boolean isDuplicate = false;
 }

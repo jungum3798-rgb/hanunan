@@ -98,6 +98,26 @@ public class DisasterNewsScheduleService {
         scheduleCall(key, INITIAL_DELAY_SEC);
     }
 
+    /**
+     * 동일 화재 후속 문자 수신 시 YouTube 수집을 활성화합니다.
+     * 이미 활성화된 경우에는 아무 동작도 하지 않습니다.
+     *
+     * @param disasterId   원본 화재 엔티티 PK
+     * @param disasterType 재난 유형 ("화재")
+     */
+    public void enableYoutube(Long disasterId, String disasterType) {
+        String key = monitorKey(disasterType, disasterId);
+        MonitoringState state = activeMonitors.get(key);
+        if (state == null) {
+            log.warn("[YouTube 활성화] 모니터링 상태 없음 - key={} (이미 종료됐거나 미시작)", key);
+            return;
+        }
+        if (!state.youtubeEnabled) {
+            state.youtubeEnabled = true;
+            log.info("[YouTube 활성화] 동일 화재 후속 문자 수신 → YouTube 수집 활성화 - key={}", key);
+        }
+    }
+
     // ═══════════════════════════════════════════════════════════
     // 내부 실행 로직
     // ═══════════════════════════════════════════════════════════
@@ -317,7 +337,7 @@ public class DisasterNewsScheduleService {
         final String        parsedAddress;
         final String        alertLevel;
         final LocalDateTime disasterOccurredAt; // 재난 발생 시각 (이후 기사만 수집)
-        final boolean       youtubeEnabled;     // YouTube 수집 대상 여부 (startMonitoring 시점 1회 판단)
+        boolean             youtubeEnabled;     // YouTube 수집 대상 여부 (동일 화재 재문자 수신 시 활성화 가능)
 
         int phase            = 1;
         int callCount        = 0;
