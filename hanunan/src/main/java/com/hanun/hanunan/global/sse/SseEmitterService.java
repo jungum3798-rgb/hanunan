@@ -79,6 +79,14 @@ public class SseEmitterService {
     }
 
     /**
+     * 기존 화재 마커 알림 등급 변경 → 연결된 모든 클라이언트에 브로드캐스트
+     * 프론트엔드는 id로 기존 마커를 찾아 alertLevel만 업데이트합니다.
+     */
+    public void broadcastFireUpdate(FireMarkerDto dto) {
+        broadcast("fire-marker-update", dto);
+    }
+
+    /**
      * 신규 재난알림(테러·붕괴·폭발·산사태) 마커 → 연결된 모든 클라이언트에 브로드캐스트
      */
     public void broadcastDisaster(DisasterAlertMarkerDto dto) {

@@ -134,6 +134,19 @@ public class FireDisasterService {
 
                 // 안전안내였어도 반복 문자이므로 YouTube 수집 활성화
                 disasterNewsScheduleService.enableYoutube(original.getId(), "화재");
+
+                // 후속 문자의 알림 등급이 더 높으면 원본 마커 등급 업그레이드 후 SSE 전송
+                boolean upgraded = original.upgradeAlertLevel(item.getEmrgStepNm());
+                if (upgraded) {
+                    fireDisasterRepository.save(original);
+                    log.info("화재 알림 등급 업그레이드 - ID={}, 새 등급={}", original.getId(), item.getEmrgStepNm());
+                    sseEmitterService.broadcastFireUpdate(new FireMarkerDto(
+                            original.getId(), original.getSn(), original.getMessageContent(),
+                            original.getRcptnRgnNm(), original.getParsedAddress(),
+                            original.getLatitude(), original.getLongitude(),
+                            original.getCreatedAt().toString(), original.getAlertLevel()
+                    ));
+                }
                 return;
             }
 

@@ -38,4 +38,25 @@ public class FireDisaster {
     @Column(nullable = false)
     @Builder.Default
     private boolean isDuplicate = false;
+
+    // 알림 등급 우선순위: 안전안내(1) < 긴급재난(2) < 위급재난(3)
+    private static final java.util.Map<String, Integer> ALERT_PRIORITY = java.util.Map.of(
+            "안전안내", 1,
+            "긴급재난", 2,
+            "위급재난", 3
+    );
+
+    /**
+     * 후속 재난문자의 알림 등급이 더 높을 경우에만 업그레이드합니다.
+     * @return 등급이 실제로 변경되었으면 true
+     */
+    public boolean upgradeAlertLevel(String newAlertLevel) {
+        int current = ALERT_PRIORITY.getOrDefault(this.alertLevel, 0);
+        int incoming = ALERT_PRIORITY.getOrDefault(newAlertLevel, 0);
+        if (incoming > current) {
+            this.alertLevel = newAlertLevel;
+            return true;
+        }
+        return false;
+    }
 }
