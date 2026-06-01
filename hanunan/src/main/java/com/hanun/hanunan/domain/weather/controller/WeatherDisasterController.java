@@ -1,5 +1,6 @@
 package com.hanun.hanunan.domain.weather.controller;
 
+import com.hanun.hanunan.domain.weather.dto.EvacuationShelterResponse;
 import com.hanun.hanunan.domain.weather.dto.WeatherAlertDto;
 import com.hanun.hanunan.domain.weather.dto.WeatherAlertsResponse;
 import com.hanun.hanunan.domain.weather.service.WeatherDisasterService;
@@ -23,6 +24,23 @@ public class WeatherDisasterController {
             @RequestParam double lat,
             @RequestParam double lng) {
         return ResponseEntity.ok(weatherDisasterService.getAlertsByLocation(lat, lng));
+    }
+
+    // 대피 키워드 감지 + 반경 내 대피소 조회
+    // 예: GET /api/weather/3/shelters?lat=37.5665&lng=126.9780&radius=1000
+    @GetMapping("/{id}/shelters")
+    public ResponseEntity<?> getEvacuationShelters(
+            @PathVariable Long id,
+            @RequestParam double lat,
+            @RequestParam double lng,
+            @RequestParam(defaultValue = "1000") int radius) {
+        try {
+            EvacuationShelterResponse response =
+                    weatherDisasterService.getEvacuationShelters(id, lat, lng, radius);
+            return ResponseEntity.ok(response);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
     }
 
     // 테스트용: 임의 기상 재난문자 직접 저장
