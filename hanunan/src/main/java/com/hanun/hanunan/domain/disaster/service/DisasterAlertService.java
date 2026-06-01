@@ -11,8 +11,6 @@ import com.hanun.hanunan.domain.fire.dto.GroqResponse;
 import com.hanun.hanunan.domain.fire.service.GeocodingService;
 import com.hanun.hanunan.global.casualty.dto.CasualtyInfoDto;
 import com.hanun.hanunan.global.casualty.service.CasualtyExtractionService;
-import com.hanun.hanunan.global.evacuation.dto.EvacuationShelterResponse;
-import com.hanun.hanunan.global.evacuation.service.EvacuationService;
 import com.hanun.hanunan.global.news.dto.NewsArticleDto;
 import com.hanun.hanunan.global.news.dto.YoutubeVideoDto;
 import com.hanun.hanunan.global.news.entity.DisasterYoutubeVideo;
@@ -52,7 +50,6 @@ public class DisasterAlertService {
     private final DisasterNewsArticleRepository disasterNewsArticleRepository;
     private final DisasterYoutubeVideoRepository disasterYoutubeVideoRepository;
     private final DisasterNewsScheduleService disasterNewsScheduleService;
-    private final EvacuationService evacuationService;
     private final CasualtyExtractionService casualtyExtractionService;
     private final SseEmitterService sseEmitterService;
     private final GeocodingService geocodingService;
@@ -119,6 +116,7 @@ public class DisasterAlertService {
                     saved.getCreatedAt().toString(), saved.getAlertLevel(),
                     saved.getDisasterType()
             ));
+            sseEmitterService.broadcastEvacuationShelters(saved.getDisasterType(), saved.getId(), saved.getMessageContent());
 
             // 뉴스 모니터링 시작 (T+10분 후 Phase1 첫 호출)
             disasterNewsScheduleService.startMonitoring(saved.getId(), item.getDstSeNm(), fullAddress,
@@ -254,13 +252,6 @@ public class DisasterAlertService {
                         .publishedAt(video.getPublishedAt())
                         .build())
                 .collect(Collectors.toList());
-    }
-
-    public EvacuationShelterResponse getEvacuationShelters(Long disasterId, String disasterType,
-                                                            double lat, double lng, int radius) {
-        DisasterAlert alert = disasterAlertRepository.findById(disasterId)
-                .orElseThrow(() -> new IllegalArgumentException("해당 재난 정보를 찾을 수 없습니다. id=" + disasterId));
-        return evacuationService.getShelters(disasterType, disasterId, alert.getMessageContent(), lat, lng, radius);
     }
 
     public List<DisasterAlertMarkerDto> getAllAlertMarkers() {

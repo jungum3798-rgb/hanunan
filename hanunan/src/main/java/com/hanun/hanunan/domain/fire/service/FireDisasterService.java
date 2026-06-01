@@ -8,8 +8,6 @@ import com.hanun.hanunan.domain.fire.repository.FireDisasterRepository;
 import com.hanun.hanunan.global.casualty.dto.CasualtyInfoDto;
 import com.hanun.hanunan.global.casualty.service.CasualtyExtractionService;
 import com.hanun.hanunan.global.client.DisasterApiClient;
-import com.hanun.hanunan.global.evacuation.dto.EvacuationShelterResponse;
-import com.hanun.hanunan.global.evacuation.service.EvacuationService;
 import com.hanun.hanunan.global.news.dto.NewsArticleDto;
 import com.hanun.hanunan.global.news.repository.DisasterNewsArticleRepository;
 import com.hanun.hanunan.global.news.service.DisasterNewsScheduleService;
@@ -42,7 +40,6 @@ public class FireDisasterService {
     private final FireDisasterRepository fireDisasterRepository;
     private final DisasterNewsArticleRepository disasterNewsArticleRepository;
     private final CasualtyExtractionService casualtyExtractionService;
-    private final EvacuationService evacuationService;
     private final GeocodingService geocodingService;
     private final ObjectMapper objectMapper;
     private final RestTemplate restTemplate;
@@ -175,6 +172,7 @@ public class FireDisasterService {
                     saved.getLatitude(), saved.getLongitude(),
                     saved.getCreatedAt().toString(), saved.getAlertLevel()
             ));
+            sseEmitterService.broadcastEvacuationShelters("화재", saved.getId(), saved.getMessageContent());
 
             // 뉴스 모니터링 시작 (T+10분 후 Phase1 첫 호출)
             disasterNewsScheduleService.startMonitoring(saved.getId(), "화재", fullAddress,
@@ -353,6 +351,7 @@ public class FireDisasterService {
 
         // SSE로 연결된 프론트에 신규 화재 마커 실시간 전송
         sseEmitterService.broadcastFire(dto);
+        sseEmitterService.broadcastEvacuationShelters("화재", saved.getId(), messageContent);
 
         // 뉴스 모니터링 시작
         disasterNewsScheduleService.startMonitoring(saved.getId(), "화재", fullAddress,
@@ -410,12 +409,4 @@ public class FireDisasterService {
                 .collect(Collectors.toList());
     }
 
-    // ─────────────────────────────────────────
-    // 대피 명령 감지 + 반경 내 대피소 조회
-    // ─────────────────────────────────────────
-    public EvacuationShelterResponse getEvacuationShelters(Long fireId, double lat, double lng, int radius) {
-        FireDisaster fire = fireDisasterRepository.findById(fireId)
-                .orElseThrow(() -> new IllegalArgumentException("해당 화재 정보를 찾을 수 없습니다. id=" + fireId));
-        return evacuationService.getShelters("화재", fireId, fire.getMessageContent(), lat, lng, radius);
-    }
 }

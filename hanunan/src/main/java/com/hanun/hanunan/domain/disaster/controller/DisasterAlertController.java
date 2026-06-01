@@ -3,7 +3,6 @@ package com.hanun.hanunan.domain.disaster.controller;
 import com.hanun.hanunan.domain.disaster.dto.DisasterAlertMarkerDto;
 import com.hanun.hanunan.domain.disaster.service.DisasterAlertService;
 import com.hanun.hanunan.global.casualty.dto.CasualtyInfoDto;
-import com.hanun.hanunan.global.evacuation.dto.EvacuationShelterResponse;
 import com.hanun.hanunan.global.news.dto.NewsArticleDto;
 import com.hanun.hanunan.global.news.dto.YoutubeVideoDto;
 import lombok.RequiredArgsConstructor;
@@ -40,24 +39,6 @@ public class DisasterAlertController {
             @PathVariable Long id,
             @RequestParam String type) {
         return ResponseEntity.ok(disasterAlertService.getDisasterYoutubeVideos(id, type));
-    }
-
-    // 대피 키워드 감지 + 반경 내 대피소 조회
-    // 예: GET /api/disaster/3/shelters?type=붕괴&lat=37.5665&lng=126.9780&radius=1000
-    @GetMapping("/{id}/shelters")
-    public ResponseEntity<?> getEvacuationShelters(
-            @PathVariable Long id,
-            @RequestParam String type,
-            @RequestParam double lat,
-            @RequestParam double lng,
-            @RequestParam(defaultValue = "1000") int radius) {
-        try {
-            EvacuationShelterResponse response =
-                    disasterAlertService.getEvacuationShelters(id, type, lat, lng, radius);
-            return ResponseEntity.ok(response);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
-        }
     }
 
     // 특정 재난의 피해 정보 조회 (사망자, 부상자, 재산피해, 발생원인, 수습현황)
