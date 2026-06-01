@@ -3,6 +3,7 @@ package com.hanun.hanunan.domain.fire.controller;
 import com.hanun.hanunan.domain.fire.dto.FireMarkerDto;
 import com.hanun.hanunan.domain.fire.service.FireDisasterService;
 import com.hanun.hanunan.global.casualty.dto.CasualtyInfoDto;
+import com.hanun.hanunan.global.evacuation.dto.EvacuationShelterResponse;
 import com.hanun.hanunan.global.news.dto.NewsArticleDto;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -52,6 +53,22 @@ public class FireDisasterController {
         try {
             List<NewsArticleDto> news = fireDisasterService.getFireNews(id);
             return ResponseEntity.ok(news);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
+    // 대피 키워드 감지 + 반경 내 대피소 조회
+    // 예: GET /api/fire/3/shelters?lat=37.5665&lng=126.9780&radius=1000
+    @GetMapping("/{id}/shelters")
+    public ResponseEntity<?> getEvacuationShelters(
+            @PathVariable Long id,
+            @RequestParam double lat,
+            @RequestParam double lng,
+            @RequestParam(defaultValue = "1000") int radius) {
+        try {
+            EvacuationShelterResponse response = fireDisasterService.getEvacuationShelters(id, lat, lng, radius);
+            return ResponseEntity.ok(response);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         }

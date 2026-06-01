@@ -1,10 +1,9 @@
 package com.hanun.hanunan.domain.weather.service;
 
-import com.hanun.hanunan.domain.safety.dto.SafetyFacilityDto;
-import com.hanun.hanunan.domain.safety.service.ShelterApiService;
 import com.hanun.hanunan.global.client.dto.DisasterApiItem;
 import com.hanun.hanunan.domain.fire.service.GeocodingService;
-import com.hanun.hanunan.domain.weather.dto.EvacuationShelterResponse;
+import com.hanun.hanunan.global.evacuation.dto.EvacuationShelterResponse;
+import com.hanun.hanunan.global.evacuation.service.EvacuationService;
 import com.hanun.hanunan.domain.weather.dto.RegionDto;
 import com.hanun.hanunan.domain.weather.dto.WeatherAlertDto;
 import com.hanun.hanunan.domain.weather.dto.WeatherAlertsResponse;
@@ -29,18 +28,9 @@ public class WeatherDisasterService {
             "태풍", "지진해일", "폭염", "풍랑", "한파", "홍수", "호우", "황사"
     );
 
-    // 대피 관련 키워드 목록
-    private static final List<String> EVACUATION_KEYWORDS = List.of(
-            "대피", "피난", "즉시 이동", "대피하시기", "대피바랍니다", "대피 바랍니다"
-    );
-
-    // 반경(m) → 위경도 오프셋 변환 상수 (한국 위도 37° 기준)
-    private static final double METERS_PER_LAT_DEGREE = 111_000.0;
-    private static final double METERS_PER_LNG_DEGREE = 89_000.0;
-
     private final WeatherDisasterRepository weatherDisasterRepository;
     private final GeocodingService geocodingService;
-    private final ShelterApiService shelterApiService;
+    private final EvacuationService evacuationService;
 
     // ─────────────────────────────────────────
     // 스케줄러에서 호출 - 기상 재난문자 필터링 및 저장
@@ -126,42 +116,10 @@ public class WeatherDisasterService {
     // ─────────────────────────────────────────
     // 대피 명령 감지 + 반경 내 대피소 조회
     // ─────────────────────────────────────────
-
-    /**
-     * 재난문자에 대피 키워드가 포함된 경우 사용자 반경 내 대피소를 반환합니다.
-     *
-     * @param id     WeatherDisaster ID
-     * @param lat    사용자 위도
-     * @param lng    사용자 경도
-     * @param radius 검색 반경 (미터, 기본값 1000m)
-     */
     public EvacuationShelterResponse getEvacuationShelters(Long id, double lat, double lng, int radius) {
         WeatherDisaster disaster = weatherDisasterRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("해당 기상 재난문자를 찾을 수 없습니다. id=" + id));
-
-        // 대피 키워드 포함 여부 확인
-        String message = disaster.getMessageContent();
-        boolean evacuationRequired = message != null &&
-                EVACUATION_KEYWORDS.stream().anyMatch(message::contains);
-
-        if (!evacuationRequired) {
-            log.info("[대피 대피소] 대피 키워드 없음 - id={}", id);
-            return new EvacuationShelterResponse(false, List.of());
-        }
-
-        // 반경(m) → 바운딩 박스 변환
-        double latOffset = radius / METERS_PER_LAT_DEGREE;
-        double lngOffset = radius / METERS_PER_LNG_DEGREE;
-
-        double swLat = lat - latOffset;
-        double swLng = lng - lngOffset;
-        double neLat = lat + latOffset;
-        double neLng = lng + lngOffset;
-
-        List<SafetyFacilityDto> shelters = shelterApiService.fetchShelter(swLat, swLng, neLat, neLng);
-        log.info("[대피 대피소] 대피 키워드 감지 - id={}, 반경={}m, 대피소={}건", id, radius, shelters.size());
-
-        return new EvacuationShelterResponse(true, shelters);
+        return evacuationService.getShelters("기상", id, disaster.getMessageContent(), lat, lng, radius);
     }
 
     // ─────────────────────────────────────────

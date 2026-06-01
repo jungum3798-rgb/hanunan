@@ -1,4 +1,4 @@
-package com.hanun.hanunan.domain.weather.dto;
+package com.hanun.hanunan.global.evacuation.dto;
 
 import com.hanun.hanunan.domain.safety.dto.SafetyFacilityDto;
 import lombok.AllArgsConstructor;
