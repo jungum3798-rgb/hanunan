@@ -18,6 +18,7 @@ import { getDistance } from "@/utils/mapUtils";
 
 import { useInfoPanel } from "@hooks/useInfoPanel";
 import { useCategory } from "@hooks/useCategory";
+import { useCommentWebSocket } from "@hooks/useCommentWebSocket";
 //import { useGeocodedWeatherAlerts } from "@hooks/useGeocodedWeatherAlerts";
 import { getFireStage } from "@utils/fireUtils";
 import {
@@ -158,6 +159,7 @@ export default function DashboardPage() {
 
         const es = connectSse(
             (initialFireMarkers, initialDisasterMarkers) => {
+                console.log("받아온 초기 데이터:", initialFireMarkers)
                 setFireMarkers(initialFireMarkers);
                 setDisasterAlertMarkers(initialDisasterMarkers);
             },
@@ -207,8 +209,17 @@ export default function DashboardPage() {
         sortedFireDisasterItems,
         sortedWeatherDisasterItems,
         handleSelectItem: originalHandleSelectItem,
-        news
+        news,
+        comments,
+        setComments,
+        disasterYoutubeNews
     } = useInfoPanel(infoPanelProps);
+
+    useCommentWebSocket({
+        activeCategory,
+        setComments,
+        isLoggedIn,
+    });
 
     const handleItemFocus = async (item: any, type: any) => {
         if (!item) return; 
@@ -338,6 +349,7 @@ export default function DashboardPage() {
                     currentUserId={currentUserId ?? 0}
                     isLoggedIn={isLoggedIn}
                     onLoginRequired={() => setIsLoginModalOpen(true)}
+                    comments={comments}
                 />
             </aside>
             {/* --- 우측 가시화 공간 공간 (지도 + 상세 인포 판넬) --- */}
@@ -377,6 +389,7 @@ export default function DashboardPage() {
                     setIsReportModalOpen={setIsReportModalOpen}
                     fireMarkers={filteredFireMarkers}
                     news={news}
+                    disasterYoutubeNews={disasterYoutubeNews}
                 />
             </div>
         
@@ -427,6 +440,9 @@ export default function DashboardPage() {
                     reportMarkers={reportMarkers}
                     reportByMarkers={reportByMarkers}
                     onSuccess={fetchLatestReports}
+                    onCommentDeleted={(commentId) =>
+                        setComments((prev) => prev.filter((comment) => comment.id !== commentId))
+                    }
                 />
             )}
         </main>

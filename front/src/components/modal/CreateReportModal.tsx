@@ -94,8 +94,8 @@ const CreateReportModal = ({
         const reportData = {
           type: itemType,
           description: newDescription,
-          pinLatitude: Number(selectedItem.latitude || selectedItem.lat || selectedItem.centerLatitude),
-          pinLongitude: Number(selectedItem.longitude || selectedItem.lng || selectedItem.centerLongitude),
+          pinLatitude: Number(selectedItem.latitude || selectedItem.lat || selectedItem.centerLatitude) || 0,
+          pinLongitude: Number(selectedItem.longitude || selectedItem.lng || selectedItem.centerLongitude) ||0,
           userLatitude: pos.coords.latitude,
           userLongitude: pos.coords.longitude,
           userAccuracyMeters: 5,

@@ -3,20 +3,23 @@
 import React, { useState, useEffect } from 'react';
 import { 
     Report, 
-    FeedComment,
+    //FeedComment,
     deleteReport,
     updateReport,
-    deleteComment,
-    getAllComments,
-    getCommentAuthorName,
+    //deleteComment,
+    //getAllComments,
+    //getCommentAuthorName,
+    ReportComment,
+    getMyComments,
 } from '@/services/api';
-
+import { deleteCommentViaWebSocket } from '@/services/commentWebSocket';
 interface MyProfileModalProps {
     userId: number;
     onClose: () => void;
     reportMarkers: Report[];
     reportByMarkers:  Report[];
     onSuccess: () => void;
+    onCommentDeleted?: (commentId: number) => void;
 }
 
 const MyProfileModal = ({
@@ -24,19 +27,38 @@ const MyProfileModal = ({
     onClose,
     reportMarkers = [],
     reportByMarkers = [],
-    onSuccess
+    onSuccess,
+    onCommentDeleted,
 }: MyProfileModalProps) => {
     const [activeTab, setActiveTab] = useState<'REPORTMARKERS' | 'REPORTBYMAKERS' | 'COMMENT'>('REPORTMARKERS');
     const [editingId, setEditingId] = useState<number | null>(null);
     const [editValue, setEditValue] = useState("");
-    const [myComments, setMyComments] = useState<FeedComment[]>([]);
+    const [myComments, setMyComments] = useState<ReportComment[]>([]);
+    const [isLoadingComments, setIsLoadingComments] = useState(false);
+
+    // useEffect(() => {
+    //     getAllComments()
+    //         .then((all) => setMyComments(all.filter((c) => c.userId === userId)))
+    //         .catch(() => setMyComments([]));
+    // }, [userId]);
 
     useEffect(() => {
-        getAllComments()
-            .then((all) => setMyComments(all.filter((c) => c.userId === userId)))
-            .catch(() => setMyComments([]));
-    }, [userId]);
+        const loadMyComments = async () => {
+            setIsLoadingComments(true);
+            try {
+                const comments = await getMyComments(userId);
+                setMyComments(comments);
+            } catch (error) {
+                console.error('내 댓글 조회 실패:', error);
+                setMyComments([]);
+            } finally {
+                setIsLoadingComments(false);
+            }
+        };
 
+        loadMyComments();
+    }, [userId]);
+    
     const myReportMarkers = reportMarkers
         .filter(r => r.userId === userId && (r as any).status !== 'HIDDEN');
     const myrRportByMarkers = reportByMarkers
@@ -49,17 +71,19 @@ const MyProfileModal = ({
                 await deleteReport(id);
                 onSuccess();
             } else if (activeTab === 'COMMENT') {
-                await deleteComment(id);
+                await deleteCommentViaWebSocket(id);
                 setMyComments(prev => prev.filter(c => c.id !== id));
+                onCommentDeleted?.(id);
             } else {
                 await deleteReport(id);
                 onSuccess();
             }
             alert("삭제되었습니다.");
         } catch (error) {
-            alert("삭제에 실패했습니다.");
+            alert(error instanceof Error ? error.message : "삭제에 실패했습니다.");
         }
     };
+
 
     const onSaveEdit = async (id: number) => {
         if (!editValue.trim()) return;
@@ -75,8 +99,7 @@ const MyProfileModal = ({
                 
                 onSuccess();
             } else if (activeTab === 'COMMENT') {
-                alert("댓글 수정은 지원하지 않습니다. 삭제 후 다시 작성해 주세요.");
-                return;
+                setMyComments(prev => prev.map(c => c.id === id ? { ...c, content: editValue } : c));
             } else {
                 const target = reportMarkers.find(r => r.id === id);
                 const currentType = (target as any)?.type || 'DISASTER';
@@ -168,13 +191,11 @@ const MyProfileModal = ({
                                         </div>
                                     )}
                                     <div className="mt-2 flex justify-between items-center">
-                                        <p className="text-[10px] text-gray-400">
-                                            {isCommentTab
-                                                ? getCommentAuthorName(item)
-                                                : `📍 ${item.locationName || "위치 정보 없음"}`}
-                                        </p>
+                                        {activeTab !== 'COMMENT' && (
+                                            <p className="text-[10px] text-gray-400">📍 {item.locationName || "위치 정보 없음"}</p>
+                                        )}
                                         {item.createdAt && (
-                                            <p className="text-[10px] text-gray-400">{new Date(item.createdAt).toLocaleString('ko-KR')}</p>
+                                            <p className="text-[10px] text-gray-400 ml-auto">{new Date(item.createdAt).toLocaleString('ko-KR')}</p>
                                         )}
                                     </div>
                                 </div>

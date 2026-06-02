@@ -3,20 +3,22 @@
 import { useState, useMemo, useEffect } from 'react';
 import { getDistance, sortItemsByDistance } from "@/utils/mapUtils";
 import { 
-    getFireStationStats, 
+    //getFireStationStats, 
     FireMarker,
     DisasterAlertMarker,
     Report,
     NewsArticle,
     getDisasterNews,
     getDisasterAlertNews,
+    getDisasterYoutubeNews,
+    YoutubeVideoDto
 } from '@/services/api';
 
 interface UseInfoPanelProps {
     activeCategory: 'DISASTER' | 'SAFETY' | 'REPORT';
-    disasters: any[];
+    //disasters: any[];
     weatherAlerts: any[];
-    fireStations: any[];
+    //fireStations: any[];
     safetyFacilities: any[];
     reportMarkers: Report[];
     fireMarkers: FireMarker[];
@@ -28,9 +30,9 @@ interface UseInfoPanelProps {
 
 export const useInfoPanel = ({
     activeCategory,
-    disasters,
+    //disasters,
     weatherAlerts,
-    fireStations,
+    //fireStations,
     safetyFacilities,
     reportMarkers,
     userLocation,
@@ -40,9 +42,13 @@ export const useInfoPanel = ({
     selectedItem
 }: UseInfoPanelProps) => {
 
-    const [itemType, setItemType] = useState<'DISASTER' | 'WEATHER' | 'FIRE' | 'SAFETY' | 'REPORT' | null>(null);
+    const [itemType, setItemType] = useState<'DISASTER' | 'WEATHER' | 'SAFETY' | 'REPORT' | null>(null);
     const [fireStats, setFireStats] = useState<any>(null);
-    
+    const [comments, setComments] = useState<any[]>([]);
+
+    //기타 재난문자 유튜브 배열
+    const [disasterYoutubeNews, setDisasterYoutubeNews] = useState<YoutubeVideoDto[]>([]); 
+
     const filterWithin10Km = (items: any[]) => {
         if (!userLocation) return items;
 
@@ -59,11 +65,11 @@ export const useInfoPanel = ({
     const sortedFireDisasterItems = useMemo(() => {
         if (activeCategory !== 'DISASTER') return [];
 
-        const disasterItems = disasters.map(d => ({
-            ...d,
-            uniqueKey: `disaster-${d.id}`,
-            contentType: 'DISASTER',
-        }));
+        // const disasterItems = disasters.map(d => ({
+        //     ...d,
+        //     uniqueKey: `disaster-${d.id}`,
+        //     contentType: 'DISASTER',
+        // }));
 
         const realTimeFireItems = fireMarkers.map(f => ({
             ...f,
@@ -85,18 +91,18 @@ export const useInfoPanel = ({
             locationName: d.parsedAddress || d.rcptnRgnNm,
         }));
 
-        const fireItems = fireStations.map(f => ({
-            ...f,
-            uniqueKey: `fire-${f.id}`,
-            contentType: 'FIRE',
-            name: f.frstCetrNm,
-            latitude: f.centerLatitude,
-            longitude: f.centerLongitude,
-        }));
+        // const fireItems = fireStations.map(f => ({
+        //     ...f,
+        //     uniqueKey: `fire-${f.id}`,
+        //     contentType: 'FIRE',
+        //     name: f.frstCetrNm,
+        //     latitude: f.centerLatitude,
+        //     longitude: f.centerLongitude,
+        // }));
 
-        const fireRelatedItems = [...disasterItems, ...realTimeFireItems, ...realTimeDisasterItems, ...fireItems];
+        const fireRelatedItems = [...realTimeFireItems, ...realTimeDisasterItems];
         return sortItemsByDistance(filterWithin10Km(fireRelatedItems), userLocation);
-    }, [activeCategory, disasters, fireStations, userLocation, fireMarkers, disasterAlertMarkers]);
+    }, [activeCategory, userLocation, fireMarkers, disasterAlertMarkers]);
 
     const sortedWeatherDisasterItems = useMemo(() => {
         if (activeCategory !== 'DISASTER') return [];
@@ -153,11 +159,13 @@ export const useInfoPanel = ({
 
     }, [activeCategory, safetyFacilities, reportMarkers, userLocation]);
     
-    const handleSelectItem = async (item: any, type: 'DISASTER' | 'WEATHER' | 'FIRE' | 'SAFETY' | 'REPORT') => {
+    const handleSelectItem = async (item: any, type: 'DISASTER' | 'WEATHER'  | 'SAFETY' | 'REPORT') => {
         if (!item) {
             setSelectedItem(null);
             setItemType(null);
             setFireStats(null);
+            setComments([]);
+            setDisasterYoutubeNews([]); //기타재난문자 유튜브 배열 초기화
             return;
         }
         // 실시간 화재 데이터 및 일반 제보 데이터 식별값 유실 방지 보정 로직
@@ -170,6 +178,7 @@ export const useInfoPanel = ({
                 isFirePipeline: true, 
                 msgCn: item.messageContent || item.msgCn, 
                 parsedAddress: item.parsedAddress || item.locationName || item.rcptnRgnNm, 
+                disasterType: item.disasterType || "화재",
                 aiSummary: item.aiSummary 
             };
         }
@@ -195,17 +204,17 @@ export const useInfoPanel = ({
         }
 
         // 1. 소방서 상세 통계 로딩 (출동 건수 데이터셋 등)
-        if (type === 'FIRE') {
-            try {
-                const stats = await getFireStationStats(targetId);
-                setFireStats(stats);
-            } catch (e) { 
-                console.error("소방서 통계 데이터 로딩 실패:", e); 
-                setFireStats(null);
-            }
-        } else {
-            setFireStats(null);
-        }
+        // if (type === 'FIRE') {
+        //     try {
+        //         const stats = await getFireStationStats(targetId);
+        //         setFireStats(stats);
+        //     } catch (e) { 
+        //         console.error("소방서 통계 데이터 로딩 실패:", e); 
+        //         setFireStats(null);
+        //     }
+        // } else {
+        //     setFireStats(null);
+        // }
 
         if (type === 'REPORT') {
             const targetLat = item.pinLatitude ?? item.latitude ?? item.lat;
@@ -278,6 +287,55 @@ export const useInfoPanel = ({
       }, [selectedItem?.id, selectedItem?.isFirePipeline, selectedItem?.isDisasterPipeline, selectedItem?.disasterType, itemType]);
     
 
+      //기타재난문자 유튜브 호출
+      useEffect(() => {
+        const isFire = selectedItem?.isFirePipeline;
+        const isDisaster = selectedItem?.isDisasterPipeline;
+
+        // DISASTER 탭이 아니거나 화재/기타재난 파이프라인이 아니면 초기화 후 종료
+        if (!selectedItem?.id || itemType !== 'DISASTER' || (!isFire && !isDisaster)) {
+            setDisasterYoutubeNews([]);
+            return;
+        }
+
+        let youtubeInterval: NodeJS.Timeout;
+
+        const fetchYoutubeData = async () => {
+            // 최대 10건 조치 조건 제어
+            if (disasterYoutubeNews.length >= 10) {
+                if (youtubeInterval) clearInterval(youtubeInterval);
+                return;
+            }
+
+            try {
+                // 화재 파이프라인은 "화재" 키워드를 명시적으로 제공하고, 기타 재난은 객체의 disasterType 사용
+                const queryType = isFire ? "화재" : selectedItem.disasterType;
+                
+                if (!queryType) {
+                    console.warn("[YouTube] 재난 유형(type) 키워드가 유실되어 API를 호출할 수 없습니다.");
+                    return;
+                }
+
+                const data = await getDisasterYoutubeNews(selectedItem.id, queryType);
+                setDisasterYoutubeNews(prev => {
+                if (data.length >= 10 && youtubeInterval) {
+                    clearInterval(youtubeInterval);
+                }
+                return data;
+            });
+            } catch (e) {
+                console.error("유튜브 데이터 폴링 실패:", e);
+            }
+        };
+
+        // 최초 1회 즉시 실행 후 1분 단위 폴링 연동
+        fetchYoutubeData();
+        youtubeInterval = setInterval(fetchYoutubeData, 60000);
+
+        return () => clearInterval(youtubeInterval);
+    }, [selectedItem?.id, selectedItem?.isFirePipeline, selectedItem?.isDisasterPipeline, selectedItem?.disasterType, itemType]);
+    
+
     return {
         setSelectedItem, 
         itemType,
@@ -286,6 +344,9 @@ export const useInfoPanel = ({
         sortedFireDisasterItems,
         sortedWeatherDisasterItems,
         handleSelectItem,
-        news
+        news,
+        comments,
+        setComments,
+        disasterYoutubeNews
     };
 };

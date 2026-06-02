@@ -4,7 +4,7 @@ import React,{useState,useEffect} from 'react';
 import { getFireStage } from "@/utils/fireUtils";
 import { getDisasterTypeUi, formatPipelineBadge, getPipelineStageLabel } from "@/utils/disasterUtils";
 import { getWeatherAlertLevelUiClasses } from "@/utils/weatherMapUtils";
-import {NewsArticle, getDisasterNews} from '@/services/api';
+import {NewsArticle, getDisasterNews, YoutubeVideoDto} from '@/services/api';
 
 interface InfoPanelProps {
   selectedItem: any;
@@ -24,6 +24,7 @@ interface InfoPanelProps {
   setIsReportModalOpen: (open: boolean) => void;
   fireMarkers: any[];
   news: NewsArticle[];
+  disasterYoutubeNews: YoutubeVideoDto[];
 }
 
 const InfoPanel: React.FC<InfoPanelProps> = ({
@@ -40,7 +41,8 @@ const InfoPanel: React.FC<InfoPanelProps> = ({
   getDistance,
   setIsReportModalOpen,
   fireMarkers,
-  news
+  news,
+  disasterYoutubeNews
 }) => {
 
   // 실시간 화재/기타 재난 데이터 파이프라인 여부 식별 가드
@@ -338,40 +340,73 @@ const InfoPanel: React.FC<InfoPanelProps> = ({
               </div>
             </div>
 
-            {/* 중간 컬럼: AI 요약 정보 레이어 */}
-            <div className="bg-white/10 rounded-2xl p-6 border border-white/10 overflow-y-auto custom-scrollbar">
-              <p className="text-sm text-[#69CCFE] mb-2 uppercase tracking-widest font-bold">✨ AI Analysis</p>
+            {/* 중간 컬럼: AI 분석 및 실시간 언론/유튜브 속보 레이어 */}
+            <div className="bg-white/10 rounded-2xl p-6 border border-white/10 overflow-y-auto custom-scrollbar flex flex-col gap-4">
+              <div>
+                <p className="text-sm text-[#69CCFE] mb-2 uppercase tracking-widest font-bold">✨ AI Analysis</p>
+                {!(isFirePipeline || isDisasterPipeline) && (
+                  <p className="text-base font-medium opacity-90 leading-relaxed italic">
+                    {selectedItem.aiSummary ? `"${selectedItem.aiSummary}"` : "선택된 인프라에 대한 AI 안전 가이드라인 분석이 준비중입니다."}
+                  </p>
+                )}
+              </div>
               
-              {isFirePipeline || isDisasterPipeline ? (
-                <div className="space-y-2">
-                  <h4 className="text-xs font-bold text-white/50 uppercase tracking-wider px-1">관련 뉴스 속보</h4>
-                  {news && news.length > 0 ? (
-                    <div className="space-y-2">
-                      {news.slice(0, 3).map((item, idx) => (
-                        <a 
-                          key={idx} 
-                          href={item.naverLink || item.link} 
-                          target="_blank" 
-                          rel="noreferrer" 
-                          className="group block p-3 bg-white/5 border border-white/10 rounded-lg hover:bg-red-900/20 hover:border-red-500/30 transition-all"
-                        >
-                          <p className="text-sm font-medium text-white group-hover:text-red-200 transition-colors truncate">
-                            {item.title.replace(/<[^>]*>?/g, '')}
-                          </p>
-                          <p className="text-[10px] text-white/40 mt-1">{item.pubDate}</p>
-                        </a>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="p-4 border border-dashed border-white/10 rounded-lg text-center">
-                      <p className="text-xs text-white/40">기사를 수집 중입니다. (약 10분 소요)</p>
-                    </div>
-                  )}
+              {(isFirePipeline || isDisasterPipeline) && (
+                <div className="space-y-4 flex-1">
+                  {/* 1. 네이버 뉴스 파트 */}
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-bold text-white/50 uppercase tracking-wider px-1">📰 관련 뉴스 속보</h4>
+                    {news && news.length > 0 ? (
+                      <div className="space-y-2">
+                        {news.slice(0, 2).map((item, idx) => (
+                          <a 
+                            key={`news-${idx}`} 
+                            href={item.naverLink || item.link} 
+                            target="_blank" 
+                            rel="noreferrer" 
+                            className="group block p-2.5 bg-white/5 border border-white/10 rounded-lg hover:bg-red-900/20 hover:border-red-500/30 transition-all"
+                          >
+                            <p className="text-xs font-medium text-white group-hover:text-red-200 transition-colors truncate">
+                              {item.title.replace(/<[^>]*>?/g, '')}
+                            </p>
+                            <p className="text-[9px] text-white/40 mt-0.5">{item.pubDate}</p>
+                          </a>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-3 border border-dashed border-white/10 rounded-lg text-center">
+                        <p className="text-[11px] text-white/40">기사를 수집 중입니다. (약 10분 소요)</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 2. 유튜브 뉴스 파트 */}
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-bold text-[#FF8A8A] uppercase tracking-wider px-1">📺 실시간 현장 영상 (YouTube)</h4>
+                    {disasterYoutubeNews && disasterYoutubeNews.length > 0 ? (
+                      <div className="space-y-2">
+                        {disasterYoutubeNews.slice(0, 2).map((video, idx) => (
+                          <a 
+                            key={`video-${idx}`} 
+                            href={video.url || `https://www.youtube.com/watch?v=${video.videoId}`} 
+                            target="_blank" 
+                            rel="noreferrer" 
+                            className="group block p-2.5 bg-white/5 border border-white/10 rounded-lg hover:bg-red-950/40 hover:border-red-500/40 transition-all"
+                          >
+                            <p className="text-xs font-medium text-white group-hover:text-red-300 transition-colors truncate">
+                              {video.title.replace(/<[^>]*>?/g, '')}
+                            </p>
+                            <p className="text-[9px] text-white/40 mt-0.5">{video.channelTitle}</p>
+                          </a>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-3 border border-dashed border-white/10 rounded-lg text-center">
+                        <p className="text-[11px] text-white/40">연동된 현장 미디어 영상이 없습니다.</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                          ) : (
-                <p className="text-base font-medium opacity-90 leading-relaxed italic">
-                  {selectedItem.aiSummary ? `"${selectedItem.aiSummary}"` : "선택된 인프라에 대한 AI 안전 가이드라인 분석이 준비중입니다."}
-                </p>
               )}
             </div>
 
@@ -403,7 +438,7 @@ const InfoPanel: React.FC<InfoPanelProps> = ({
               {/*  화재 재난  */}
               <div className="flex flex-col min-h-0 border-r border-white/10 pr-4">
                 <h3 className="text-xl font-black mb-3 shrink-0 flex items-center gap-2">
-                  <span>🚨 긴급 사고</span>
+                  <span>🚨 재난 </span>
                   <span className="text-xs font-bold opacity-60 ml-auto">거리순</span>
                 </h3>
                 <div className="flex-1 overflow-y-auto custom-scrollbar space-y-3 min-h-0">

@@ -1,66 +1,74 @@
 // 시민 댓글 피드
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { ReportComment } from '../../services/api';
 import {
-  FeedComment,
-  FeedCommentType,
-  createComment,
-  deleteComment,
-  getCommentsByType,
-  getCommentAuthorName,
-} from '../../services/api';
+  CommentMapType,
+  createCommentViaWebSocket,
+  deleteCommentViaWebSocket,
+} from '../../services/commentWebSocket';
+
 
 interface CitizenFeedProps {
   activeCategory: 'DISASTER' | 'SAFETY' | 'REPORT';
   currentUserId: number;
   isLoggedIn: boolean;
   onLoginRequired: () => void;
+  comments: ReportComment[];
 }
 
-const CATEGORY_LABEL: Record<FeedCommentType, string> = {
-  DISASTER: '재난',
-  SAFETY: '안전시설',
-  REPORT: '시민 제보',
-};
-
-const PLACEHOLDER: Record<FeedCommentType, string> = {
-  DISASTER: '재난 현장 상황을 공유하세요...',
-  SAFETY: '안전시설 관련 정보를 공유하세요...',
-  REPORT: '제보에 대한 의견을 남겨주세요...',
-};
 
 export default function CitizenFeed({
   activeCategory,
   currentUserId,
   isLoggedIn,
   onLoginRequired,
+  comments,
 }: CitizenFeedProps) {
-  const [comments, setComments] = useState<FeedComment[]>([]);
+  //const [comments, setComments] = useState<FeedComment[]>([]);
   const [commentInput, setCommentInput] = useState('');
   const [isMounted, setIsMounted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const loadComments = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const data = await getCommentsByType(activeCategory);
-      setComments(data);
-    } catch (e) {
-      console.error('댓글 조회 실패', e);
-      setComments([]);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [activeCategory]);
+  // const loadComments = useCallback(async () => {
+  //   setIsLoading(true);
+  //   try {
+  //     const data = await getCommentsByType(activeCategory);
+  //     setComments(data);
+  //   } catch (e) {
+  //     console.error('댓글 조회 실패', e);
+  //     setComments([]);
+  //   } finally {
+  //     setIsLoading(false);
+  //   }
+  // }, [activeCategory]);
 
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
+  // useEffect(() => {
+  //   setIsMounted(true);
+  // }, []);
 
-  useEffect(() => {
-    loadComments();
-  }, [loadComments]);
+  // const categoryPlaceholder: Record<CommentMapType, string> = {
+  //   DISASTER: '재난 상황에 대한 의견을 남겨주세요...',
+  //   SAFETY: '안전시설에 대한 의견을 남겨주세요...',
+  //   REPORT: '시민 제보에 대한 의견을 남겨주세요...',
+  // };
+
+  const CATEGORY_LABEL: Record<CommentMapType, string> = {
+    DISASTER: '재난',
+    SAFETY: '안전시설',
+    REPORT: '시민 제보',
+  };
+
+const PLACEHOLDER: Record<CommentMapType, string> = {
+  DISASTER: '재난 현장 상황을 공유하세요...',
+  SAFETY: '안전시설 관련 정보를 공유하세요...',
+  REPORT: '제보에 대한 의견을 남겨주세요...',
+};
+
+  // useEffect(() => {
+  //   loadComments();
+  // }, [loadComments]);
 
   const handleAddComment = async () => {
     if (!commentInput.trim()) return;
@@ -71,9 +79,12 @@ export default function CitizenFeed({
     }
 
     setIsSubmitting(true);
+
     try {
-      const savedComment = await createComment(activeCategory, commentInput.trim());
-      setComments((prev) => [savedComment, ...prev]);
+      // const savedComment = await createComment(activeCategory, commentInput.trim());
+      // setComments((prev) => [savedComment, ...prev]);
+      // setCommentInput('');
+      await createCommentViaWebSocket(activeCategory, commentInput.trim());
       setCommentInput('');
     } catch (e) {
       console.error('댓글 등록 실패', e);
@@ -86,9 +97,15 @@ export default function CitizenFeed({
   const handleDeleteComment = async (commentId: number) => {
     if (!window.confirm('댓글을 삭제하시겠습니까?')) return;
 
+    if (!isLoggedIn) {
+      onLoginRequired();
+      return;
+    }
+
     try {
-      await deleteComment(commentId);
-      setComments((prev) => prev.filter((c) => c.id !== commentId));
+      // await deleteComment(commentId);
+      // setComments((prev) => prev.filter((c) => c.id !== commentId));
+      await deleteCommentViaWebSocket(commentId);
     } catch (e) {
       console.error('댓글 삭제 실패', e);
       alert('댓글 삭제 중 오류가 발생했습니다.');
@@ -147,11 +164,8 @@ export default function CitizenFeed({
                 )}
 
                 <div className="flex justify-between items-center mb-1">
-                  <span
-                    className={`font-black ${isMyComment ? 'text-orange-600' : 'text-[#3954AA]'}`}
-                  >
-                    {getCommentAuthorName(comment)}
-                    {isMyComment && ' (나)'}
+                  <span className={`font-black ${isMyComment ? 'text-orange-600' : 'text-[#3954AA]'}`}>
+                        {comment.nickname} {isMyComment && "(나)"}
                   </span>
                   <span className="text-[10px] text-gray-400 mr-4">
                     {isMounted && comment.createdAt

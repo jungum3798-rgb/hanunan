@@ -299,8 +299,8 @@ export const createReport = async (data: ReportCreateRequest): Promise<ReportRes
   
   formData.append('type', data.type);
   formData.append('description', data.description);
-  formData.append('pinLatitude', String(data.pinLatitude));
-  formData.append('pinLongitude', String(data.pinLongitude));
+  formData.append('pinLatitude', String(data.pinLatitude)|| "");
+  formData.append('pinLongitude', String(data.pinLongitude) || "");
   formData.append('userLatitude', String(data.userLatitude));
   formData.append('userLongitude', String(data.userLongitude));
   formData.append('userAccuracyMeters', String(data.userAccuracyMeters ?? 0));
@@ -364,45 +364,112 @@ export const getMyLikedReports = async (): Promise<Report[]> => {
   return response.data;
 };
 
-//----------------------댓글 피드 (Citizen Feed)------------
-export type FeedCommentType = 'DISASTER' | 'SAFETY' | 'REPORT';
+// //----------------------댓글 피드 (Citizen Feed)------------
+// export type FeedCommentType = 'DISASTER' | 'SAFETY' | 'REPORT';
 
-export interface FeedComment {
+// export interface FeedComment {
+//   id: number;
+//   type: FeedCommentType;
+//   content: string;
+//   userId: number;
+//   userName: string | null;
+//   createdAt: string;
+// }
+
+// /** @deprecated FeedComment 사용 */
+// export type ReportComment = FeedComment;
+
+// export const getCommentsByType = async (type: FeedCommentType): Promise<FeedComment[]> => {
+//   const response = await api.get<FeedComment[]>('/api/comments', { params: { type } });
+//   return response.data;
+// };
+
+// export const getAllComments = async (): Promise<FeedComment[]> => {
+//   const types: FeedCommentType[] = ['DISASTER', 'SAFETY', 'REPORT'];
+//   const results = await Promise.all(types.map(getCommentsByType));
+//   return results
+//     .flat()
+//     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+// };
+
+// export const createComment = async (type: FeedCommentType, content: string): Promise<FeedComment> => {
+//   const response = await api.post<FeedComment>('/api/comments', { type, content });
+//   return response.data;
+// };
+
+// export const deleteComment = async (commentId: number): Promise<void> => {
+//   await api.delete(`/api/comments/${commentId}`);
+// };
+
+// export const getCommentAuthorName = (comment: FeedComment) =>
+//   comment.userName?.trim() || `사용자${comment.userId}`;
+
+
+//----------------------댓글피드------------
+export interface ReportComment {
   id: number;
-  type: FeedCommentType;
+  reportId: number;
+  userId: number;
+  nickname: string;
+  content: string;
+  imageUrl?: string | null;
+  createdAt: string;
+  targetId: number;
+  targetType: 'DISASTER' | 'WEATHER' | 'FIRE' | 'SAFETY' | 'REPORT';
+}
+
+interface CommentApiResponse {
+  id: number;
+  type: string;
   content: string;
   userId: number;
-  userName: string | null;
+  userName: string;
   createdAt: string;
 }
 
-/** @deprecated FeedComment 사용 */
-export type ReportComment = FeedComment;
+const mapCommentResponse = (comment: CommentApiResponse): ReportComment => ({
+  id: comment.id,
+  reportId: 0,
+  userId: comment.userId,
+  nickname: comment.userName,
+  content: comment.content,
+  imageUrl: null,
+  createdAt: comment.createdAt,
+  targetId: 0,
+  targetType: comment.type as ReportComment['targetType'],
+});
 
-export const getCommentsByType = async (type: FeedCommentType): Promise<FeedComment[]> => {
-  const response = await api.get<FeedComment[]>('/api/comments', { params: { type } });
-  return response.data;
+export const getSidebarComments = async (
+  type: 'DISASTER' | 'SAFETY' | 'REPORT' = 'DISASTER',
+): Promise<ReportComment[]> => {
+  const response = await api.get<CommentApiResponse[]>('/api/comments', {
+    params: { type },
+  });
+  return response.data.map(mapCommentResponse);
 };
 
-export const getAllComments = async (): Promise<FeedComment[]> => {
-  const types: FeedCommentType[] = ['DISASTER', 'SAFETY', 'REPORT'];
-  const results = await Promise.all(types.map(getCommentsByType));
-  return results
+const COMMENT_MAP_TYPES: Array<'DISASTER' | 'SAFETY' | 'REPORT'> = [
+  'DISASTER',
+  'SAFETY',
+  'REPORT',
+];
+
+export const getMyComments = async (userId: number): Promise<ReportComment[]> => {
+  const responses = await Promise.all(
+    COMMENT_MAP_TYPES.map((type) => getSidebarComments(type)),
+  );
+
+  return responses
     .flat()
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    .filter((comment) => comment.userId === userId)
+    .sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
 };
 
-export const createComment = async (type: FeedCommentType, content: string): Promise<FeedComment> => {
-  const response = await api.post<FeedComment>('/api/comments', { type, content });
-  return response.data;
-};
 
-export const deleteComment = async (commentId: number): Promise<void> => {
-  await api.delete(`/api/comments/${commentId}`);
-};
 
-export const getCommentAuthorName = (comment: FeedComment) =>
-  comment.userName?.trim() || `사용자${comment.userId}`;
 
 //-------------화재마커------------
 //0512
@@ -519,6 +586,41 @@ export async function getDisasterAlertNews(
     return [];
   }
 }
+
+
+//------------기타 재난문자 뉴스---------
+
+//-------------기타 재난문자 유튜브--------------
+
+// 유튜브 비디오 응답 데이터 타입 정의
+export interface YoutubeVideoDto {
+  videoId: string;
+  url: string;
+  title: string;
+  channelTitle: string;
+  thumbnailUrl: string;
+  publishedAt: string;
+}
+
+/**
+ * 재난 ID와 유형별로 관련 유튜브 뉴스를 최대 10건 가져옵니다.
+ * @param id 재난 ID (마커 클릭 시 전달되는 ID)
+ * @param type 재난 유형 (예: "화재", "붕괴", "테러", "폭발", "산사태")
+ */
+export const getDisasterYoutubeNews = async (
+  id: number,
+  type: string
+): Promise<YoutubeVideoDto[]> => {
+  try {
+    const response = await api.get<YoutubeVideoDto[]>(`/api/disaster/${id}/youtube`, {
+      params: { type },
+    });
+    return response.data;
+  } catch (error) {
+    console.error("[YouTube API Error]:", error);
+    return []; // 에러 발생 시 빈 배열 반환
+  }
+};
 
 //----------로그인----------
 
