@@ -8,6 +8,7 @@ import CreateReportModal from "@/components/modal/CreateReportModal";
 import ReportWriteModal from "@/components/modal/ReportWriteModal";
 import ReportListModal from "@/components/modal/ReportListModal";
 import LoginModal from "@/components/auth/LoginModal";
+import EvacuationAlertModal from "@/components/modal/EvacuationAlertModal";
 
 import TopBar from "@/components/layout/TopBar";
 import InfoPanel from "@/components/layout/InfoPanel";
@@ -31,6 +32,8 @@ import {
     connectSse,
     FireMarker,
     DisasterAlertMarker,
+    EvacuationShelter,
+    EvacuationShelterData,
     Report,
     getReports, 
     createReport, 
@@ -72,6 +75,8 @@ export default function DashboardPage() {
 
     const [fireMarkers, setFireMarkers] = useState<FireMarker[]>([]);
     const [disasterAlertMarkers, setDisasterAlertMarkers] = useState<DisasterAlertMarker[]>([]);
+    const [evacuationShelters, setEvacuationShelters] = useState<EvacuationShelter[]>([]);
+    const [isEvacuationModalOpen, setIsEvacuationModalOpen] = useState(false);
 
     const mapRef = useRef<any>(null); 
 
@@ -152,7 +157,7 @@ export default function DashboardPage() {
     }, [allReports, selectedItem]);
 
 
-    // SSE — 화재·기타 재난 마커 실시간 수신
+    // SSE — 화재·기타 재난 마커 + 대피소 실시간 수신
     useEffect(() => {
         const prependUnique = <T extends { id: number }>(prev: T[], item: T) =>
             prev.some((m) => m.id === item.id) ? prev : [item, ...prev];
@@ -169,10 +174,18 @@ export default function DashboardPage() {
             (newMarker) => {
                 setDisasterAlertMarkers((prev) => prependUnique(prev, newMarker));
             },
+            (data: EvacuationShelterData) => {
+                if (data.evacuationRequired) {
+                    setEvacuationShelters(data.shelters);
+                    setIsEvacuationModalOpen(true);
+                }
+            },
+            userLocation?.lat ?? null,
+            userLocation?.lng ?? null,
         );
 
         return () => es.close();
-    }, []);
+    }, [userLocation?.lat, userLocation?.lng]);
 
     //FireMarkers 필터링
     const filteredFireMarkers = useMemo(() => {
@@ -334,6 +347,11 @@ export default function DashboardPage() {
             />
             
             <LoginModal isOpen={isLoginModalOpen} onClose={() => setIsLoginModalOpen(false)} />
+            <EvacuationAlertModal
+                isOpen={isEvacuationModalOpen}
+                shelters={evacuationShelters}
+                onClose={() => setIsEvacuationModalOpen(false)}
+            />
 
             {/* --- 왼쪽 메인 제어 사이드바 영역 --- */}
             <aside className="w-80 flex flex-col gap-6 h-full">

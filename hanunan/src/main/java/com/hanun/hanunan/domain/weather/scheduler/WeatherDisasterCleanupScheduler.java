@@ -2,6 +2,7 @@ package com.hanun.hanunan.domain.weather.scheduler;
 
 import com.hanun.hanunan.domain.weather.entity.WeatherDisaster;
 import com.hanun.hanunan.domain.weather.repository.WeatherDisasterRepository;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -24,6 +25,11 @@ public class WeatherDisasterCleanupScheduler {
     private static final long EXPIRE_HOURS = 24;
 
     private final WeatherDisasterRepository weatherDisasterRepository;
+
+    @PostConstruct
+    public void init() {
+        deleteExpiredWeatherDisasters();
+    }
 
     @Transactional
     @Scheduled(cron = "0 0 2 * * *") // 매일 새벽 2시

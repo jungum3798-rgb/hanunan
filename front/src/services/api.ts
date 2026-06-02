@@ -499,12 +499,35 @@ export interface DisasterAlertMarker {
   disasterType: string;
 }
 
+export interface EvacuationShelter {
+  id: string;
+  type: string;
+  name: string;
+  address: string;
+  detail?: string;
+  latitude: number;
+  longitude: number;
+  phone?: string;
+}
+
+export interface EvacuationShelterData {
+  evacuationRequired: boolean;
+  shelters: EvacuationShelter[];
+}
+
 export const connectSse = (
   onInit: (fireMarkers: FireMarker[], disasterMarkers: DisasterAlertMarker[]) => void,
   onFireMarker: (marker: FireMarker) => void,
   onDisasterMarker: (marker: DisasterAlertMarker) => void,
+  onEvacuationShelter?: (data: EvacuationShelterData) => void,
+  lat?: number | null,
+  lng?: number | null,
 ) => {
-  const es = new EventSource(`${process.env.NEXT_PUBLIC_API_URL}/api/sse/subscribe`);
+  const params = new URLSearchParams();
+  if (lat != null) params.set('lat', String(lat));
+  if (lng != null) params.set('lng', String(lng));
+  const query = params.toString() ? `?${params.toString()}` : '';
+  const es = new EventSource(`${process.env.NEXT_PUBLIC_API_URL}/api/sse/subscribe${query}`);
 
   es.addEventListener('init', (e) => {
     const data = JSON.parse(e.data);
@@ -517,6 +540,10 @@ export const connectSse = (
 
   es.addEventListener('disaster-marker', (e) => {
     onDisasterMarker(JSON.parse(e.data));
+  });
+
+  es.addEventListener('evacuation-shelter', (e) => {
+    if (onEvacuationShelter) onEvacuationShelter(JSON.parse(e.data));
   });
 
   return es;

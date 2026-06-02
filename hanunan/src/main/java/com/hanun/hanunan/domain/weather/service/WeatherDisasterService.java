@@ -4,6 +4,7 @@ import com.hanun.hanunan.global.client.dto.DisasterApiItem;
 import com.hanun.hanunan.domain.fire.service.GeocodingService;
 import com.hanun.hanunan.global.evacuation.dto.EvacuationShelterResponse;
 import com.hanun.hanunan.global.evacuation.service.EvacuationService;
+import com.hanun.hanunan.global.sse.SseEmitterService;
 import com.hanun.hanunan.domain.weather.dto.RegionDto;
 import com.hanun.hanunan.domain.weather.dto.WeatherAlertDto;
 import com.hanun.hanunan.domain.weather.dto.WeatherAlertsResponse;
@@ -31,6 +32,7 @@ public class WeatherDisasterService {
     private final WeatherDisasterRepository weatherDisasterRepository;
     private final GeocodingService geocodingService;
     private final EvacuationService evacuationService;
+    private final SseEmitterService sseEmitterService;
 
     // ─────────────────────────────────────────
     // 스케줄러에서 호출 - 기상 재난문자 필터링 및 저장
@@ -54,9 +56,10 @@ public class WeatherDisasterService {
                     .alertLevel(item.getEmrgStepNm())
                     .createdAt(LocalDateTime.now())
                     .build();
-            weatherDisasterRepository.save(entity);
+            WeatherDisaster saved = weatherDisasterRepository.save(entity);
             log.info("기상 재난문자 저장 - SN: {}, 종류: {}, 지역: {}",
                     item.getSn(), item.getDstSeNm(), item.getRcptnRgnNm());
+            sseEmitterService.broadcastEvacuationShelters("기상", saved.getId(), saved.getMessageContent());
         }
     }
 
@@ -106,6 +109,7 @@ public class WeatherDisasterService {
                 .build();
 
         WeatherDisaster saved = weatherDisasterRepository.save(entity);
+        sseEmitterService.broadcastEvacuationShelters("기상", saved.getId(), saved.getMessageContent());
         return new WeatherAlertDto(
                 saved.getId(), saved.getSn(), saved.getMessageContent(),
                 saved.getRcptnRgnNm(), saved.getDstSeNm(),
