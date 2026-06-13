@@ -1,0 +1,50 @@
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: hanunan-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: hanunan
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - hanunan-net
+
+  backend:
+    build:
+      context: ./hanunan
+    container_name: hanunan-backend
+    restart: unless-stopped
+    env_file:
+      - ./hanunan/.env
+    environment:
+      DB_URL: jdbc:postgresql://db:5432/hanunan
+    depends_on:
+      - db
+    ports:
+      - "8081:8081"
+    networks:
+      - hanunan-net
+
+  frontend:
+    build:
+      context: ./front
+    container_name: hanunan-frontend
+    restart: unless-stopped
+    env_file:
+      - ./front/.env.local
+    ports:
+      - "3000:3000"
+    networks:
+      - hanunan-net
+
+volumes:
+  postgres_data:
+
+networks:
+  hanunan-net:
+    driver: bridge

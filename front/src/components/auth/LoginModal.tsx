@@ -30,18 +30,18 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
   if (!isOpen) return null;
 
   const handleKakaoLogin = () => {
-    const kakaoClientId = "007f796368af3edc01ad000ad8484adc";
-    const kakaoRedirectUrl = "http://localhost:3000/oauth/kakao/redirect";
+    const kakaoClientId = process.env.NEXT_PUBLIC_KAKAO_CLIENT_ID;
+    const kakaoRedirectUrl = process.env.NEXT_PUBLIC_KAKAO_REDIRECT_URI;
     const KAKAO_AUTH_URL = `https://kauth.kakao.com/oauth/authorize?client_id=${kakaoClientId}&redirect_uri=${kakaoRedirectUrl}&response_type=code`;
-  
+
     window.location.href = KAKAO_AUTH_URL;
   };
 
   const handleGoogleLogin = () => {
     const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-    const googleRedirectUrl = "http://localhost:3000/oauth/google/redirect";
+    const googleRedirectUrl = process.env.NEXT_PUBLIC_GOOGLE_REDIRECT_URI;
     const GOOGLE_AUTH_URL = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${googleClientId}&redirect_uri=${googleRedirectUrl}&response_type=code&scope=email%20profile`;
-  
+
     window.location.href = GOOGLE_AUTH_URL;
   };
 
